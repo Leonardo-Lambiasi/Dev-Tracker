@@ -1,0 +1,6 @@
+@LeoDevTracker.API_HostAddress = http://localhost:5145
+
+GET {{LeoDevTracker.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

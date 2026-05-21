@@ -1,0 +1,62 @@
+# ============================================================
+# .NET / ASP.NET Core
+# ============================================================
+backend/**/bin/
+backend/**/obj/
+backend/**/*.user
+backend/**/*.suo
+
+# Segredos — NUNCA commitar estes arquivos
+backend/**/appsettings.json
+backend/**/appsettings.Development.json
+backend/**/appsettings.Local.json
+
+# EF Migrations snapshot pode ser commitado, mas não os binários
+backend/**/*.db
+backend/**/*.sqlite
+
+# ============================================================
+# Frontend — Node / Vite / React
+# ============================================================
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/.env.production
+
+# ============================================================
+# IDE / Editores
+# ============================================================
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+
+# ============================================================
+# Sistema Operacional
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# Logs e temporários
+# ============================================================
+*.log
+*.tmp
+*.temp
+backend/**/logs/
+
+# ============================================================
+# Claude Code / ferramentas internas
+# ============================================================
+.claude/
+
+# ============================================================
+# Segredos de produção
+# ============================================================
+backend/**/appsettings.Production.json
