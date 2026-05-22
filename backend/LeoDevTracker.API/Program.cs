@@ -50,15 +50,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        // Suporta array (appsettings) ou variável singular (Railway: AllowedOrigin=https://...)
-        var origins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [];
-        var singular = builder.Configuration["AllowedOrigin"];
-        if (!string.IsNullOrWhiteSpace(singular))
-            origins = [.. origins, singular];
-        if (origins.Length == 0)
-            origins = ["http://localhost:5173", "http://localhost:5174"];
-
-        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
     });
 });
 
