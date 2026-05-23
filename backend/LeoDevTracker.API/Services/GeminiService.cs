@@ -13,17 +13,18 @@ namespace LeoDevTracker.API.Services
                 ?? throw new InvalidOperationException("GeminiApi:ApiKey não configurada.");
         }
 
-        public async Task<string> Enviar(string prompt, string modelo, int maxTokens = 1024, bool jsonMode = false)
+        public async Task<string> Enviar(string prompt, string modelo, int maxTokens = 1024, bool jsonMode = false, int thinkingBudget = -1)
         {
             try
             {
                 var client = new Client(apiKey: _apiKey);
 
+                var budget = thinkingBudget >= 0 ? thinkingBudget : (modelo == AiModelos.Flash ? 0 : 8000);
                 var config = new GenerateContentConfig
                 {
                     MaxOutputTokens = maxTokens,
                     Temperature = 0.7f,
-                    ThinkingConfig = new ThinkingConfig { ThinkingBudget = modelo == AiModelos.Flash ? 0 : 8000 },
+                    ThinkingConfig = new ThinkingConfig { ThinkingBudget = budget },
                 };
                 if (jsonMode) config.ResponseMimeType = "application/json";
 

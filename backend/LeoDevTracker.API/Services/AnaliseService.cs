@@ -51,7 +51,7 @@ namespace LeoDevTracker.API.Services
                 ? MontarPromptRafa(registros, anteriores, projetos, inicio, fim, insightsDaSemana)
                 : MontarPromptLeo(registros, anteriores, projetos, inicio, fim, insightsDaSemana, resumoFinanceiro);
 
-            var conteudo = await _ai.Enviar(prompt, AiModelos.Pro, maxTokens: 1200);
+            var conteudo = await _ai.Enviar(prompt, AiModelos.Flash, maxTokens: 1200, thinkingBudget: 8000);
 
             var analise = new AnaliseSemanal
             {
