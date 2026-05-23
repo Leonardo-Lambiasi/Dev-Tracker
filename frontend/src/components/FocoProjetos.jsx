@@ -78,7 +78,6 @@ export default function FocoProjetos() {
                         value={proximoPasso}
                         onChange={e => setProximoPasso(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') salvar(p); if (e.key === 'Escape') cancelar(); }}
-                        placeholder="Qual o próximo passo?"
                         style={{ flex: 1, fontSize: 13 }}
                       />
                       <button

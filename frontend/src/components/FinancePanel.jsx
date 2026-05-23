@@ -134,7 +134,7 @@ export default function FinancePanel() {
           <div className="grid-2" style={{ marginBottom: 0 }}>
             <div className="field">
               <label>Descrição <span style={{ color: '#ef4444' }}>*</span></label>
-              <input value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Reserva de emergência" />
+              <input value={descricao} onChange={e => setDescricao(e.target.value)} />
             </div>
             <div className="field">
               <label>Prazo</label>
@@ -144,11 +144,11 @@ export default function FinancePanel() {
           <div className="grid-2">
             <div className="field">
               <label>Valor da meta (R$) <span style={{ color: '#ef4444' }}>*</span></label>
-              <input type="number" min="0" step="0.01" placeholder="10000" value={valorMeta} onChange={e => setValorMeta(e.target.value)} />
+              <input type="number" min="0" step="0.01" value={valorMeta} onChange={e => setValorMeta(e.target.value)} />
             </div>
             <div className="field">
               <label>Valor atual (R$)</label>
-              <input type="number" min="0" step="0.01" placeholder="0" value={valorAtual} onChange={e => setValorAtual(e.target.value)} />
+              <input type="number" min="0" step="0.01" value={valorAtual} onChange={e => setValorAtual(e.target.value)} />
             </div>
           </div>
           {erroForm && <p style={{ color: '#fca5a5', fontSize: 13, marginBottom: 12 }}>{erroForm}</p>}

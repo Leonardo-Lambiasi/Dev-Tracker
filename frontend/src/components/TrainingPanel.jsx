@@ -48,7 +48,8 @@ export default function TrainingPanel() {
 
   const diasAcademia = semanaAtual.filter(r => r.treinoTipo === 'academia' || r.treinoTipo === 'ambos').length;
   const diasVolei = semanaAtual.filter(r => r.treinoTipo === 'volei' || r.treinoTipo === 'ambos').length;
-  const diasCaminhada = semanaAtual.filter(r => r.treinoTipo === 'caminhada' || r.treinoTipo === 'ambos').length;
+  const diasCaminhada = semanaAtual.filter(r => r.treinoTipo === 'caminhada/corrida').length;
+  const diasBike = semanaAtual.filter(r => r.treinoTipo === 'bike').length;
 
   const rendimentos = registros
     .filter(r => r.treinoRendimento != null && r.treinoRendimento > 0)
@@ -60,14 +61,12 @@ export default function TrainingPanel() {
   const porSemana = {};
   registros.forEach(r => {
     const key = inicioSemana(r.data);
-    if (!porSemana[key]) porSemana[key] = { semana: key, academia: 0, atividade2: 0 };
-    if (r.treinoTipo === 'academia') porSemana[key].academia++;
-    else if (!isRafa && r.treinoTipo === 'volei') porSemana[key].atividade2++;
-    else if (isRafa && r.treinoTipo === 'caminhada') porSemana[key].atividade2++;
-    else if (r.treinoTipo === 'ambos') {
-      porSemana[key].academia++;
-      porSemana[key].atividade2++;
-    }
+    if (!porSemana[key]) porSemana[key] = { semana: key, academia: 0, atividade2: 0, bike: 0 };
+    const tipo = r.treinoTipo;
+    if (tipo === 'academia' || tipo === 'ambos') porSemana[key].academia++;
+    if (!isRafa && (tipo === 'volei' || tipo === 'ambos')) porSemana[key].atividade2++;
+    if (isRafa && tipo === 'caminhada/corrida') porSemana[key].atividade2++;
+    if (isRafa && tipo === 'bike') porSemana[key].bike++;
   });
   const chartData = Object.values(porSemana).slice(-4);
 
@@ -75,7 +74,7 @@ export default function TrainingPanel() {
 
   const metaAcademia = isRafa ? 5 : 5;
   const metaAtiv2 = isRafa ? 3 : 2;
-  const label2 = isRafa ? 'Caminhada' : 'Vôlei';
+  const label2 = isRafa ? 'Caminhada/Corrida' : 'Vôlei';
   const diasAtiv2 = isRafa ? diasCaminhada : diasVolei;
 
   return (
@@ -118,6 +117,7 @@ export default function TrainingPanel() {
               <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8', paddingTop: 8 }} />
               <Bar dataKey="academia" name="Academia" fill="var(--accent)" radius={[4, 4, 0, 0]} />
               <Bar dataKey="atividade2" name={label2} fill="#10b981" radius={[4, 4, 0, 0]} />
+              {isRafa && <Bar dataKey="bike" name="Bike" fill="#a78bfa" radius={[4, 4, 0, 0]} />}
             </BarChart>
           </ResponsiveContainer>
         </div>
