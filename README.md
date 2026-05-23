@@ -8,8 +8,9 @@ Multi-usuário: Leo (dev) e Rafa (psicóloga) com perfis, temas e prompts distin
 
 ## Stack
 
-- **Frontend:** React + Vite (porta 5173 local)
-- **Backend:** .NET 8 + EF Core + PostgreSQL (porta 5145 local)
+- **Frontend:** React + Vite — Vercel (https://dev-tracker-iota.vercel.app)
+- **Backend:** .NET 8 + EF Core — Render Docker free tier (https://leo-dev-tracker-api.onrender.com)
+- **Banco:** Neon (PostgreSQL serverless)
 - **IA:** Google Gemini 2.5 Flash (insights diários) e Gemini 2.5 Pro (análise semanal)
 - **Auth:** JWT Bearer, tokens de 30 dias
 - **Rate limiting:** 60 req/min por IP
@@ -22,22 +23,16 @@ Multi-usuário: Leo (dev) e Rafa (psicóloga) com perfis, temas e prompts distin
 
 - Node.js 18+
 - .NET 8 SDK
-- PostgreSQL 14+
-- Chave de API do Google Gemini ([aistudio.google.com](https://aistudio.google.com))
+- PostgreSQL 14+ (ou conta no Neon)
+- Chave de API do Google Gemini (aistudio.google.com)
 
 ### Backend
 
 ```bash
 cd backend/LeoDevTracker.API
-
-# Copie e edite o arquivo de configuração
 cp appsettings.example.json appsettings.json
 # Preencha: connection string, Gemini API key, JWT secret, senhas dos usuários
-
-# Aplique as migrations
 dotnet ef database update
-
-# Rode
 dotnet run
 ```
 
@@ -52,131 +47,52 @@ npm run dev
 
 ---
 
-## Deploy — Railway + Supabase + Vercel
+## Deploy (produção atual)
 
-**Ordem obrigatória:** Supabase → Railway → Vercel. Cada etapa depende da anterior.
+| Serviço | Plataforma | URL |
+|---|---|---|
+| Frontend | Vercel | https://dev-tracker-iota.vercel.app |
+| Backend | Render (Docker, free) | https://leo-dev-tracker-api.onrender.com |
+| Banco | Neon (PostgreSQL) | ep-snowy-frog-acm1rduz.sa-east-1.aws.neon.tech |
 
----
-
-### ETAPA 1 — Supabase (banco)
-
-1. Acesse [supabase.com](https://supabase.com) e crie uma conta
-2. Clique em **New project**, escolha um nome e uma senha forte — **guarde essa senha**
-3. Aguarde o projeto inicializar (~2 minutos)
-4. Vá em **Settings → Database → Connection string → URI** e copie a string
-5. Converta para o formato do Npgsql (usado pelo EF Core):
+### Variáveis de ambiente — Render
 
 ```
-Host=db.xxxxxxxxxxxx.supabase.co;Database=postgres;Username=postgres;Password=SUA-SENHA;SSL Mode=Require;Trust Server Certificate=true
-```
+DB_HOST=ep-snowy-frog-acm1rduz.sa-east-1.aws.neon.tech
+DB_NAME=neondb
+DB_USER=neondb_owner
+DB_PASS=<senha>
 
-Guarde essa string — vai entrar no Railway como variável de ambiente.
+GeminiApi__ApiKey=<chave>
 
----
-
-### ETAPA 2 — Railway (backend)
-
-1. Acesse [railway.app](https://railway.app) e crie uma conta com GitHub
-2. Clique em **New Project → Deploy from GitHub repo** e selecione o repositório
-3. Railway detecta .NET automaticamente
-4. Em **Settings**, configure:
-
-**Root Directory:** `backend/LeoDevTracker.API`
-
-5. Em **Variables**, adicione:
-
-```
-ConnectionStrings__DefaultConnection=Host=db.xxxx.supabase.co;Database=postgres;Username=postgres;Password=SUA-SENHA;SSL Mode=Require;Trust Server Certificate=true
-
-GeminiApi__ApiKey=AIza...
-
-Jwt__Secret=gere-uma-string-aleatoria-aqui-minimo-32-chars
+Jwt__Secret=<secret 32+ chars>
+Jwt__Issuer=LeoDevTracker
+Jwt__Audience=LeoDevTrackerApp
 Jwt__ExpiracaoHoras=720
 
-Usuarios__leo=senha-forte-do-leo
-Usuarios__rafa=senha-forte-da-rafa
-
-AllowedOrigin=https://seu-app.vercel.app
+Usuarios__leo=<senha>
+Usuarios__rafa=<senha>
 
 ASPNETCORE_ENVIRONMENT=Production
 ASPNETCORE_URLS=http://+:$PORT
+
+DOTNET_GCHeapHardLimit=209715200
+DOTNET_GCConserveMemory=9
 ```
 
-> Para gerar o `Jwt__Secret`: `openssl rand -base64 32` no terminal.
-
-6. Em **Settings → Networking**, clique em **Generate Domain** para obter a URL pública
-7. **Guarde essa URL** — vai entrar no Vercel
-
-> As migrations rodam automaticamente no primeiro boot em produção (código já configurado em `Program.cs`).
-
----
-
-### ETAPA 3 — Vercel (frontend)
-
-1. Acesse [vercel.com](https://vercel.com) e crie conta com GitHub
-2. Clique em **New Project → Import Git Repository**
-3. Selecione o repositório e configure:
-
-| Campo | Valor |
-|---|---|
-| Root Directory | `frontend` |
-| Framework Preset | Vite |
-| Build Command | `npm run build` |
-| Output Directory | `dist` |
-
-4. Em **Environment Variables**, adicione:
+### Variáveis de ambiente — Vercel
 
 ```
-VITE_API_URL=https://nomeapp.up.railway.app/api
+VITE_API_URL=https://leo-dev-tracker-api.onrender.com/api
 ```
 
-5. Faça o deploy e copie a URL gerada (ex: `https://dev-tracker.vercel.app`)
-6. Volte no Railway e atualize `AllowedOrigin` com essa URL exata
-7. Force um redeploy no Railway para o CORS atualizar
+### Observações de deploy
 
----
-
-### ETAPA 4 — Checklist pós-deploy
-
-Teste nessa ordem no browser:
-
-- [ ] `https://dev-tracker.vercel.app/login` — tela de login aparece
-- [ ] Login com `leo` — dashboard carrega, tema indigo
-- [ ] Criar um registro diário — salva e retorna insight da IA
-- [ ] Login com `rafa` — dashboard carrega, tema roxo
-- [ ] Gerar análise semanal — retorna sem erro 500
-- [ ] Colar extrato bancário (só Leo) — retorna análise financeira
-- [ ] `https://nomeapp.up.railway.app/swagger` — documentação da API aparece
-
----
-
-### Problemas comuns
-
-**CORS error no browser:**
-`AllowedOrigin` no Railway não bate com a URL exata do Vercel. Deve ser sem barra no final: `https://app.vercel.app` (não `https://app.vercel.app/`).
-
-**Migration falhou no Supabase:**
-A connection string precisa ter `SSL Mode=Require;Trust Server Certificate=true`.
-
-**Railway dando erro de build:**
-Verificar se o `Root Directory` aponta para a pasta onde fica o `.csproj`.
-
-**Gemini retornando 403:**
-Testar a chave primeiro em [aistudio.google.com](https://aistudio.google.com) antes de depurar o código.
-
-**Frontend não conecta no backend:**
-Abrir DevTools → Network e verificar se as requisições vão para a URL certa. Se `VITE_API_URL` não estava setada antes do build, o Vite embutiu a URL errada no bundle — faça redeploy no Vercel após setar a variável.
-
----
-
-### Custo mensal estimado
-
-| Serviço | Plano | Custo |
-|---|---|---|
-| Supabase | Free (500MB, 2 projetos) | $0 |
-| Railway | Hobby ($5 crédito/mês incluído) | $0–$5 |
-| Vercel | Free (hobby) | $0 |
-| Gemini API | Free tier ou pay-as-you-go | $0–$0.50 |
+- **Render free tier** hiberna após 15 min — primeira requisição demora ~30s para acordar o serviço
+- **Migrations** rodam automaticamente no boot em produção (try/catch para não crashar se falhar)
+- **CORS** configurado com `AllowAnyOrigin` — segurança garantida pelo JWT
+- **Supabase descartado:** incompatível com Render free tier (IPv6 bloqueado)
+- **Railway descartado:** trial encerrado
 
 ---
 
@@ -184,7 +100,7 @@ Abrir DevTools → Network e verificar se as requisições vão para a URL certa
 
 - `appsettings.json` está no `.gitignore` — nunca commitar com dados reais
 - `frontend/.env` está no `.gitignore` — nunca commitar
-- Senhas dos usuários ficam apenas no `appsettings.json` (não no banco)
+- Senhas dos usuários ficam apenas em variáveis de ambiente (não no banco)
 - Tokens JWT expiram em 30 dias (configurável via `Jwt__ExpiracaoHoras`)
 - Isolamento total por usuário: registros, projetos, metas, análises e rotina
 
@@ -200,7 +116,8 @@ leo-dev-tracker/
 │       ├── Models/         # RegistroDiario, Projeto, MetaFinanceira, AnaliseSemanal, RotinaSlot
 │       ├── Services/       # IAiService, GeminiService, AnaliseService
 │       ├── Data/           # AppDbContext + migrations
-│       └── Helpers/        # UsuarioHelper
+│       ├── Helpers/        # UsuarioHelper
+│       └── Dockerfile
 └── frontend/
     └── src/
         ├── components/     # Dashboard, DailyForm, TrainingPanel, WeeklyReport, WeeklyGrid...
@@ -208,3 +125,33 @@ leo-dev-tracker/
         ├── contexts/       # AuthContext
         └── services/       # api.js
 ```
+
+---
+
+## Problemas comuns
+
+**Render 500 em todas as rotas:**
+Verificar se as variáveis `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS` estão setadas. Connection string com quebra de linha causa `KeyNotFoundException` no Npgsql.
+
+**Render hiberna (cold start):**
+Acessar `https://leo-dev-tracker-api.onrender.com/` no browser para acordar o serviço antes de usar o app.
+
+**CORS error no browser:**
+Verificar se o frontend está na URL de produção do Vercel (não URL de preview com hash).
+
+**Gemini retornando 403:**
+Testar a chave em aistudio.google.com antes de depurar o código.
+
+**Frontend não conecta no backend:**
+Verificar `VITE_API_URL` no Vercel. Se foi setada após o primeiro deploy, é necessário redeployar para o Vite embutir a URL correta no bundle.
+
+---
+
+## Custo mensal estimado
+
+| Serviço | Plano | Custo |
+|---|---|---|
+| Neon | Free (0.5GB) | $0 |
+| Render | Free tier | $0 |
+| Vercel | Free (hobby) | $0 |
+| Gemini API | Free tier ou pay-as-you-go | $0–$0.50 |
