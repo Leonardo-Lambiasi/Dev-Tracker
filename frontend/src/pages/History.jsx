@@ -6,9 +6,34 @@ const HUMOR_LABEL = { 1: '😞', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
 
 function treinoLabel(tipo, isRafa) {
   if (!tipo || tipo === 'nenhum') return null;
-  const base = { academia: 'Academia', volei: 'Vôlei', caminhada: 'Caminhada' };
+  const base = { academia: 'Academia', volei: 'Vôlei', caminhada: 'Caminhada', 'caminhada/corrida': 'Caminhada/corrida', bike: 'Bike' };
   if (tipo === 'ambos') return isRafa ? 'Academia + Caminhada' : 'Academia + Vôlei';
   return base[tipo] ?? tipo;
+}
+
+function RafaExtrasRow({ dadosExtras }) {
+  const extras = dadosExtras ? (() => { try { return JSON.parse(dadosExtras); } catch { return {}; } })() : {};
+  const partes = [
+    extras.qualidadeSono && `sono ${extras.qualidadeSono}/5`,
+    extras.atendimentos && `${extras.atendimentos} atend.`,
+  ].filter(Boolean);
+  const gratidao = extras.gratidao || null;
+  const snippet = gratidao ? gratidao.split('\n')[0].slice(0, 80) + (gratidao.length > 80 ? '…' : '') : null;
+  if (!partes.length && !snippet) return null;
+  return (
+    <>
+      {partes.length > 0 && (
+        <div style={{ width: '100%', fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+          {partes.join(' · ')}
+        </div>
+      )}
+      {snippet && (
+        <div style={{ width: '100%', fontSize: 12, color: '#64748b', marginTop: 2, fontStyle: 'italic' }}>
+          "{snippet}"
+        </div>
+      )}
+    </>
+  );
 }
 
 function fmtData(str) {
@@ -117,6 +142,7 @@ export default function History() {
                     <span style={{ color: '#64748b' }}>Desafios: </span>{r.desafios}
                   </div>
                 )}
+                {isRafa && <RafaExtrasRow dadosExtras={r.dadosExtras} />}
               </div>
 
               {/* Ações */}

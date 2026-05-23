@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { api } from '../services/api';
@@ -14,19 +14,9 @@ import TrainingPanel from './TrainingPanel';
 import WeeklyGrid from './WeeklyGrid';
 import WeeklyReport from './WeeklyReport';
 
-const PIE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
-
 function localToday() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function extrasBool(registro, key) {
-  if (!registro.dadosExtras) return false;
-  try {
-    const obj = JSON.parse(registro.dadosExtras);
-    return !!obj[key];
-  } catch { return false; }
 }
 
 function extrasInt(registro, key) {
@@ -85,7 +75,7 @@ export default function Dashboard() {
         setSemana(s ?? []);
         setHistorico(h ?? []);
       })
-      .catch(() => setErro('Não foi possível conectar ao backend. Verifique se está rodando em localhost:5145.'))
+      .catch(() => setErro('Não foi possível carregar os dados. Tente recarregar a página.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -124,15 +114,13 @@ export default function Dashboard() {
   const mostrarBannerHumor = isRafa && !bannerDismissed && humorUltimos3 !== null && humorUltimos3 < 3;
 
   // Métricas Rafa — bem-estar
-  const totalAgua = semana.filter(r => extrasBool(r, 'aguaBebida')).length;
-  const totalDieta = semana.filter(r => extrasBool(r, 'seguiuDieta')).length;
   const totalAtend = semana.reduce((acc, r) => acc + extrasInt(r, 'atendimentos'), 0);
   const totalConteudo = semana.reduce((acc, r) => acc + extrasInt(r, 'conteudoPostado'), 0);
-  const diasComRegistro = semana.length || 1;
 
-  // Treino Rafa (calculado no frontend pois o resumo só tem diasAcademia/diasVolei)
-  const diasAcademiaRafa = semana.filter(r => r.treinoTipo === 'academia' || r.treinoTipo === 'ambos').length;
-  const diasCaminhadaRafa = semana.filter(r => r.treinoTipo === 'caminhada' || r.treinoTipo === 'ambos').length;
+  // Treino Rafa
+  const diasAcademiaRafa = semana.filter(r => r.treinoTipo === 'academia').length;
+  const diasCaminhadaRafa = semana.filter(r => r.treinoTipo === 'caminhada/corrida').length;
+  const diasBikeRafa = semana.filter(r => r.treinoTipo === 'bike').length;
 
   // Gráfico de sono — Rafa
   const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -235,18 +223,6 @@ export default function Dashboard() {
 
               <div className="card">
                 <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Água & dieta
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: '#9333ea', lineHeight: 1 }}>
-                  {Math.round((totalAgua / diasComRegistro) * 100)}%
-                </div>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
-                  {totalAgua}/{diasComRegistro} dias · dieta {Math.round((totalDieta / diasComRegistro) * 100)}%
-                </div>
-              </div>
-
-              <div className="card">
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Atendimentos
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: '#9333ea', lineHeight: 1 }}>
@@ -255,43 +231,54 @@ export default function Dashboard() {
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>essa semana</div>
               </div>
 
-              <div className="card">
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Conteúdo
+              <div className="card" style={{ gridColumn: 'span 2' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Conteúdo
+                  </div>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: totalConteudo >= 3 ? '#22c55e' : '#9333ea' }}>
+                    {totalConteudo}/3 posts
+                  </span>
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: totalConteudo >= 3 ? '#22c55e' : '#9333ea', lineHeight: 1 }}>
-                  {totalConteudo}/3
+                <div style={{ background: '#2a2d3e', borderRadius: 6, height: 8, overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${Math.min((totalConteudo / 3) * 100, 100)}%`,
+                    height: '100%',
+                    background: totalConteudo >= 3 ? '#22c55e' : '#9333ea',
+                    borderRadius: 6,
+                    transition: 'width 0.4s',
+                  }} />
                 </div>
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
-                  {totalConteudo >= 3 ? 'Meta batida! 💜' : 'meta semanal'}
+                  {totalConteudo >= 3 ? 'Meta da semana batida!' : 'meta: 3 por semana'}
                 </div>
-              </div>
-            </div>
-
-            {/* Barra de progresso conteúdo */}
-            <div className="card" style={{ marginTop: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-                <span style={{ fontSize: 13, color: '#cbd5e1', fontWeight: 500 }}>Progresso de conteúdo</span>
-                <span style={{ fontSize: 13, color: '#9333ea', fontWeight: 600 }}>{totalConteudo}/3 posts</span>
-              </div>
-              <div style={{ background: '#2a2d3e', borderRadius: 6, height: 8, overflow: 'hidden' }}>
-                <div style={{
-                  width: `${Math.min((totalConteudo / 3) * 100, 100)}%`,
-                  height: '100%',
-                  background: totalConteudo >= 3 ? '#22c55e' : '#9333ea',
-                  borderRadius: 6,
-                  transition: 'width 0.4s',
-                }} />
               </div>
             </div>
           </div>
 
-          {/* Treino stats para Rafa */}
-          <div className="grid-4">
-            <StatCard label="Academia esta semana" value={`${diasAcademiaRafa}x`} sub="meta: 5x" color={diasAcademiaRafa >= 5 ? '#22c55e' : '#9333ea'} />
-            <StatCard label="Caminhada esta semana" value={`${diasCaminhadaRafa}x`} sub="meta: 3x" color={diasCaminhadaRafa >= 3 ? '#22c55e' : '#9333ea'} />
-            <StatCard label="Rendimento médio" value={resumo?.rendimentoTreinoMedio ? `${Number(resumo.rendimentoTreinoMedio).toFixed(1)}/5` : '—'} sub="nos treinos" color="#9333ea" />
-            <StatCard label="Dias registrados" value={`${resumo?.diasComRegistro ?? 0} dias`} sub="essa semana" color="#9333ea" />
+          {/* Treino stats Rafa — timeline horizontal */}
+          <div className="card">
+          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Treino da semana
+          </div>
+          <div style={{ display: 'flex', gap: 0, alignItems: 'center', flexWrap: 'wrap' }}>
+            {[
+              { label: 'Academia', valor: diasAcademiaRafa, cor: '#9333ea' },
+              { label: 'Caminhada', valor: diasCaminhadaRafa, cor: '#8b5cf6' },
+              { label: 'Bike', valor: diasBikeRafa, cor: '#a78bfa' },
+              { label: 'Rendimento', valor: resumo?.rendimentoTreinoMedio ? `${Number(resumo.rendimentoTreinoMedio).toFixed(1)}/5` : '—', cor: '#6366f1', raw: true },
+            ].map((item, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
+                {i > 0 && <div style={{ width: 1, height: 40, background: '#2a2d3e', flexShrink: 0 }} />}
+                <div style={{ textAlign: 'center', flex: 1, padding: '4px 12px' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: item.cor }}>
+                    {item.raw ? item.valor : `${item.valor}x`}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{item.label}</div>
+                </div>
+              </div>
+            ))}
+          </div>
           </div>
         </>
       )}
@@ -380,22 +367,14 @@ export default function Dashboard() {
           {!isRafa && topicosData.length > 0 && (
             <div className="card">
               <div className="muted" style={{ marginBottom: 14 }}>Tópicos estudados</div>
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
-                  <Pie
-                    data={topicosData}
-                    cx="50%" cy="50%"
-                    outerRadius={70}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${Math.round(percent * 100)}%`}
-                    labelLine={false}
-                  >
-                    {topicosData.map((_, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
+              <ResponsiveContainer width="100%" height={Math.max(120, topicosData.length * 32)}>
+                <BarChart data={topicosData} layout="vertical" margin={{ left: 0, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3e" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={100} />
                   <Tooltip {...tooltipStyle} />
-                </PieChart>
+                  <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} name="Vezes" />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           )}
@@ -405,8 +384,8 @@ export default function Dashboard() {
       <FocoProjetos />
       <WeeklyGrid />
       <ProjectTracker />
-      {!isRafa && <FinancePanel />}
-      {!isRafa && <ExtratoPanel />}
+      <FinancePanel />
+      <ExtratoPanel />
       <TrainingPanel />
       <WeeklyReport />
     </div>

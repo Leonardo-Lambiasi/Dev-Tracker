@@ -154,7 +154,7 @@ export default function DailyForm({ onSuccess }) {
   });
 
   const treinoOpcoes = isRafa
-    ? ['academia', 'caminhada', 'ambos', 'nenhum']
+    ? ['academia', 'caminhada/corrida', 'bike', 'nenhum']
     : ['academia', 'volei', 'ambos', 'nenhum'];
 
   const sectionsDefault = isRafa
@@ -191,7 +191,7 @@ export default function DailyForm({ onSuccess }) {
 
   function treinoHint() {
     if (!treinoTipo) return null;
-    const labelMap = { volei: 'Vôlei', academia: 'Academia', caminhada: 'Caminhada', ambos: 'Ambos', nenhum: 'Nenhum' };
+    const labelMap = { volei: 'Vôlei', academia: 'Academia', caminhada: 'Caminhada', 'caminhada/corrida': 'Caminhada/corrida', bike: 'Bike', ambos: 'Ambos', nenhum: 'Nenhum' };
     const label = labelMap[treinoTipo] ?? treinoTipo;
     return treinoRendimento ? `${label} · ${treinoRendimento}/5` : label;
   }
@@ -200,14 +200,12 @@ export default function DailyForm({ onSuccess }) {
     const parts = [];
     if (conquistas) parts.push('conquistas');
     if (desafios) parts.push('desafios');
-    if (!isRafa && destaque) parts.push('destaques');
+    if (destaque) parts.push('destaques');
     return parts.join(' + ') || null;
   }
 
   function saudeHint() {
     const preenchidos = [
-      extras.aguaBebida && 'água',
-      extras.seguiuDieta && 'dieta',
       extras.qualidadeSono && `sono ${extras.qualidadeSono}/5`,
       extras.atendimentos && `${extras.atendimentos} atend.`,
     ].filter(Boolean);
@@ -226,9 +224,6 @@ export default function DailyForm({ onSuccess }) {
     try {
       const dadosExtras = isRafa
         ? JSON.stringify({
-            aguaBebida: extras.aguaBebida,
-            seguiuDieta: extras.seguiuDieta,
-            supervisao: extras.supervisao,
             qualidadeSono: extras.qualidadeSono ?? null,
             gratidao: extras.gratidao || null,
             atendimentos: extras.atendimentos ? parseInt(extras.atendimentos, 10) : 0,
@@ -248,7 +243,7 @@ export default function DailyForm({ onSuccess }) {
         treinoObs: treinoObs || null,
         conquistas: conquistas || null,
         desafios: desafios || null,
-        destaque: (!isRafa && destaque) ? destaque : null,
+        destaque: destaque || null,
         dadosExtras,
       });
 
@@ -258,8 +253,8 @@ export default function DailyForm({ onSuccess }) {
       if (!insight) {
         setTimeout(() => onSuccess?.(), 1000);
       }
-    } catch {
-      setErro('Erro ao salvar. Verifique se o backend está rodando em localhost:5145.');
+    } catch (err) {
+      setErro(err?.message?.startsWith('HTTP') ? 'Erro ao salvar. Tente novamente.' : (err?.message ?? 'Erro ao salvar.'));
     } finally {
       setLoading(false);
     }
@@ -328,10 +323,6 @@ export default function DailyForm({ onSuccess }) {
           onToggle={() => toggle('saude')}
           hint={saudeHint()}
         >
-          <Toggle label="Tomou 2,5L de água?" value={extras.aguaBebida} onChange={v => setExtra('aguaBebida', v)} />
-          <Toggle label="Seguiu a dieta?" value={extras.seguiuDieta} onChange={v => setExtra('seguiuDieta', v)} />
-          <Toggle label="Teve supervisão hoje?" value={extras.supervisao} onChange={v => setExtra('supervisao', v)} />
-
           <div className="field">
             <label>Qualidade do sono</label>
             <RatingBtns value={extras.qualidadeSono} onChange={v => setExtra('qualidadeSono', v)} />
@@ -442,7 +433,7 @@ export default function DailyForm({ onSuccess }) {
           <label>Tipo de treino</label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {treinoOpcoes.map(t => {
-              const labelMap = { volei: 'Vôlei', academia: 'Academia', caminhada: 'Caminhada', ambos: 'Ambos', nenhum: 'Nenhum' };
+              const labelMap = { volei: 'Vôlei', academia: 'Academia', caminhada: 'Caminhada', 'caminhada/corrida': 'Caminhada/corrida', bike: 'Bike', ambos: 'Ambos', nenhum: 'Nenhum' };
               const label = labelMap[t] ?? t;
               const selected = treinoTipo === t;
               return (
@@ -498,7 +489,7 @@ export default function DailyForm({ onSuccess }) {
             onChange={e => setConquistas(e.target.value)}
           />
         </div>
-        <div className="field" style={{ marginBottom: isRafa ? 0 : undefined }}>
+        <div className="field">
           <label>Desafios</label>
           <textarea
             placeholder={isRafa ? 'O que foi difícil ou pesado?' : 'O que travou? Bloqueios, dificuldades, distrações...'}
@@ -506,16 +497,14 @@ export default function DailyForm({ onSuccess }) {
             onChange={e => setDesafios(e.target.value)}
           />
         </div>
-        {!isRafa && (
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label>Destaques</label>
-            <textarea
-              placeholder="Insight, algo que aprendeu, momento marcante..."
-              value={destaque}
-              onChange={e => setDestaque(e.target.value)}
-            />
-          </div>
-        )}
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>Destaques</label>
+          <textarea
+            placeholder={isRafa ? 'Algo que você quer lembrar desse dia...' : 'Insight, algo que aprendeu, momento marcante...'}
+            value={destaque}
+            onChange={e => setDestaque(e.target.value)}
+          />
+        </div>
       </Section>
 
       {erro && humor && (

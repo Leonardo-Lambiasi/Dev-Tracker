@@ -29,26 +29,40 @@ namespace LeoDevTracker.API.Controllers
             if (string.IsNullOrWhiteSpace(request.Extrato))
                 return BadRequest(new { error = "O extrato não pode estar vazio." });
 
-            var prompt = $"""
-                Você é um assistente financeiro pessoal de Leo, 26 anos, desenvolvedor em início de carreira no Brasil.
-                Analise o extrato bancário abaixo e organize as informações de forma clara e útil.
+            var extrato = request.Extrato;
+            var prompt = $$"""
+                Analise o extrato bancário abaixo e retorne APENAS um objeto JSON válido, sem markdown, sem texto adicional.
 
                 EXTRATO:
-                {request.Extrato}
+                {{extrato}}
 
-                RESPONDA COM:
-                1. Resumo do período: total de entradas, total de saídas e saldo líquido
-                2. Gastos por categoria (alimentação, transporte, assinatura, lazer, moradia, outros) com valor total e % do total de saídas
-                3. Top 3 maiores gastos individuais
-                4. Um padrão ou comportamento financeiro identificado
-                5. Uma recomendação financeira prática e direta
+                Retorne exatamente neste formato JSON (sem comentários, sem texto fora do JSON):
+                {
+                  "resumo": { "entradas": 0.00, "saidas": 0.00, "saldo": 0.00 },
+                  "categorias": [
+                    { "nome": "Alimentação", "valor": 0.00, "percentual": 0.0 },
+                    { "nome": "Transporte", "valor": 0.00, "percentual": 0.0 },
+                    { "nome": "Assinatura", "valor": 0.00, "percentual": 0.0 },
+                    { "nome": "Lazer", "valor": 0.00, "percentual": 0.0 },
+                    { "nome": "Moradia", "valor": 0.00, "percentual": 0.0 },
+                    { "nome": "Outros", "valor": 0.00, "percentual": 0.0 }
+                  ],
+                  "maioresGastos": [
+                    { "descricao": "Nome do gasto", "valor": 0.00, "data": "DD/MM" },
+                    { "descricao": "Nome do gasto", "valor": 0.00, "data": "DD/MM" },
+                    { "descricao": "Nome do gasto", "valor": 0.00, "data": "DD/MM" }
+                  ],
+                  "padrao": "Padrão de consumo em português (1-2 frases).",
+                  "recomendacao": "Recomendação prática em português (1-2 frases)."
+                }
 
-                Seja conciso. Use R$ para valores. Máximo 350 palavras.
+                Inclua apenas categorias com valor > 0. Use ponto para decimais. Retorne SOMENTE o JSON.
                 """;
 
             try
             {
-                var analise = await _ai.Enviar(prompt, AiModelos.Flash, 1000);
+                var analiseRaw = await _ai.Enviar(prompt, AiModelos.Flash, 1500, jsonMode: true);
+                var analise = analiseRaw.Replace("```json", "").Replace("```", "").Trim();
 
                 var registro = new AnaliseSemanal
                 {

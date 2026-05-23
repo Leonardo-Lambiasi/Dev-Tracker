@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace LeoDevTracker.API.Models
 {
@@ -6,7 +7,7 @@ namespace LeoDevTracker.API.Models
     {
         public Guid Id { get; set; } = Guid.NewGuid();
 
-        [Required]
+        [BindNever]
         [StringLength(100)]
         public string Usuario { get; set; } = string.Empty;
 

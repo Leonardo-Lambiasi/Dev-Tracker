@@ -110,16 +110,16 @@ export default function ProjectTracker() {
           <div className="grid-2" style={{ marginBottom: 0 }}>
             <div className="field">
               <label>Nome <span style={{ color: '#ef4444' }}>*</span></label>
-              <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Hellfire VTT" />
+              <input value={nome} onChange={e => setNome(e.target.value)} />
             </div>
             <div className="field">
               <label>Stack</label>
-              <input value={stack} onChange={e => setStack(e.target.value)} placeholder="React, .NET..." />
+              <input value={stack} onChange={e => setStack(e.target.value)} />
             </div>
           </div>
           <div className="field">
             <label>Descrição</label>
-            <input value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Breve descrição..." />
+            <input value={descricao} onChange={e => setDescricao(e.target.value)} />
           </div>
           <div className="grid-2">
             <div className="field">
@@ -142,7 +142,7 @@ export default function ProjectTracker() {
           </div>
           <div className="field">
             <label>Próximo passo</label>
-            <input value={proximoPasso} onChange={e => setProximoPasso(e.target.value)} placeholder="O que fazer agora nesse projeto?" />
+            <input value={proximoPasso} onChange={e => setProximoPasso(e.target.value)} />
           </div>
           {erroForm && (
             <p style={{ color: '#fca5a5', fontSize: 13, marginBottom: 12 }}>{erroForm}</p>

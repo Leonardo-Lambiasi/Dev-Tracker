@@ -5,13 +5,15 @@ const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const PERIODOS = ['manha', 'tarde', 'noite'];
 const PERIODO_LABEL = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' };
 
-const CATEGORIAS = ['estudo', 'trabalho', 'treino', 'pessoal', 'descanso'];
+const CATEGORIAS = ['trabalho', 'estudo', 'treino', 'projeto', 'descanso', 'registro', 'outro'];
 const COR_CAT = {
-  estudo:    '#6366f1',
   trabalho:  '#3b82f6',
+  estudo:    '#6366f1',
   treino:    '#10b981',
-  pessoal:   '#f59e0b',
+  projeto:   '#8b5cf6',
   descanso:  '#64748b',
+  registro:  '#f59e0b',
+  outro:     '#94a3b8',
 };
 
 function diaSemanaHoje() {
@@ -33,6 +35,7 @@ export default function WeeklyGrid() {
   const [horaInicio, setHoraInicio] = useState('');
   const [horaFim, setHoraFim] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [erroSalvar, setErroSalvar] = useState('');
 
   const painelRef = useRef(null);
 
@@ -73,6 +76,7 @@ export default function WeeklyGrid() {
     setCategoria('estudo');
     setHoraInicio('');
     setHoraFim('');
+    setErroSalvar('');
   }
 
   function iniciarNovo() {
@@ -81,6 +85,7 @@ export default function WeeklyGrid() {
     setCategoria('estudo');
     setHoraInicio('');
     setHoraFim('');
+    setErroSalvar('');
     setModo('novo');
   }
 
@@ -90,6 +95,7 @@ export default function WeeklyGrid() {
     setCategoria(slot.categoria);
     setHoraInicio(slot.horaInicio ?? '');
     setHoraFim(slot.horaFim ?? '');
+    setErroSalvar('');
     setModo('editar');
   }
 
@@ -113,8 +119,8 @@ export default function WeeklyGrid() {
         setSlots(prev => prev.map(s => s.id === slotEditando.id ? atualizado : s));
       }
       setModo('ver');
-    } catch {
-      // silencioso
+    } catch (err) {
+      setErroSalvar(err?.message?.startsWith('HTTP') ? 'Erro ao salvar. Tente novamente.' : (err?.message ?? 'Erro ao salvar.'));
     } finally {
       setSalvando(false);
     }
@@ -188,7 +194,7 @@ export default function WeeklyGrid() {
               categoria={categoria} setCategoria={setCategoria}
               horaInicio={horaInicio} setHoraInicio={setHoraInicio}
               horaFim={horaFim} setHoraFim={setHoraFim}
-              salvando={salvando} onSalvar={salvar}
+              salvando={salvando} onSalvar={salvar} erro={erroSalvar}
               onCancelar={() => { setModo('ver'); setSelecionado(null); }}
               onNovo={iniciarNovo}
               slotsCell={slotsEm(selecionado.dia, selecionado.periodo)}
@@ -278,7 +284,7 @@ export default function WeeklyGrid() {
             categoria={categoria} setCategoria={setCategoria}
             horaInicio={horaInicio} setHoraInicio={setHoraInicio}
             horaFim={horaFim} setHoraFim={setHoraFim}
-            salvando={salvando} onSalvar={salvar}
+            salvando={salvando} onSalvar={salvar} erro={erroSalvar}
             onCancelar={() => { setModo('ver'); setSelecionado(null); }}
             onNovo={iniciarNovo}
             slotsCell={slotsEm(selecionado.dia, selecionado.periodo)}
@@ -294,6 +300,7 @@ export default function WeeklyGrid() {
 }
 
 function SlotChip({ slot, compact, onEdit, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const cor = COR_CAT[slot.categoria] ?? '#6366f1';
   if (compact) {
     return (
@@ -320,18 +327,30 @@ function SlotChip({ slot, compact, onEdit, onDelete }) {
           </span>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 6 }}>
-        {onEdit && (
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {onEdit && !confirmDelete && (
           <button type="button" onClick={e => { e.stopPropagation(); onEdit(slot); }}
             style={{ fontSize: 11, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             Editar
           </button>
         )}
-        {onDelete && (
-          <button type="button" onClick={e => { e.stopPropagation(); onDelete(slot.id); }}
+        {onDelete && !confirmDelete && (
+          <button type="button" onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
             style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             ×
           </button>
+        )}
+        {onDelete && confirmDelete && (
+          <>
+            <button type="button" onClick={e => { e.stopPropagation(); onDelete(slot.id); }}
+              style={{ fontSize: 11, color: '#ef4444', background: '#ef444420', border: '1px solid #ef444440', borderRadius: 4, cursor: 'pointer', padding: '2px 6px' }}>
+              Confirmar
+            </button>
+            <button type="button" onClick={e => { e.stopPropagation(); setConfirmDelete(false); }}
+              style={{ fontSize: 11, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              ✕
+            </button>
+          </>
         )}
       </div>
     </div>
@@ -341,7 +360,7 @@ function SlotChip({ slot, compact, onEdit, onDelete }) {
 function PainelEdicao({
   modo, label, setLabel, categoria, setCategoria,
   horaInicio, setHoraInicio, horaFim, setHoraFim,
-  salvando, onSalvar, onCancelar, onNovo,
+  salvando, onSalvar, onCancelar, onNovo, erro,
   slotsCell, onEditarSlot, onDeletarSlot,
 }) {
   if (modo === 'ver') {
@@ -373,7 +392,6 @@ function PainelEdicao({
             value={label}
             onChange={e => setLabel(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && onSalvar()}
-            placeholder="ex: Estudar C#"
           />
         </div>
         <div className="field">
@@ -408,6 +426,9 @@ function PainelEdicao({
           <input type="time" value={horaFim} onChange={e => setHoraFim(e.target.value)} />
         </div>
       </div>
+      {erro && (
+        <p style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{erro}</p>
+      )}
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="button" className="btn btn-primary" onClick={onSalvar} disabled={salvando || !label.trim()}>
           {salvando ? 'Salvando...' : 'Salvar'}

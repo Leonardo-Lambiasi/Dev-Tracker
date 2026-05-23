@@ -29,22 +29,25 @@ namespace LeoDevTracker.API.Controllers
             _db.RegistrosDiarios.Add(registro);
             await _db.SaveChangesAsync();
 
+            string insightFallback = usuario == "rafa"
+                ? "Registro salvo. Cuide-se bem hoje."
+                : "Registro salvo. Continue avançando.";
+
             string? insightErro = null;
             try
             {
                 var prompt = usuario == "rafa"
                     ? MontarPromptInsightRafa(registro)
                     : MontarPromptInsightLeo(registro);
-                var insight = await ai.Enviar(prompt, AiModelos.Flash, maxTokens: 200);
-                if (!string.IsNullOrWhiteSpace(insight))
-                {
-                    registro.InsightDiario = insight;
-                    await _db.SaveChangesAsync();
-                }
+                var insight = await ai.Enviar(prompt, AiModelos.Flash, maxTokens: 500);
+                registro.InsightDiario = string.IsNullOrWhiteSpace(insight) ? insightFallback : insight;
+                await _db.SaveChangesAsync();
             }
             catch (Exception ex)
             {
                 insightErro = ex.Message;
+                registro.InsightDiario = insightFallback;
+                await _db.SaveChangesAsync();
             }
 
             await LogarRegistro(registro, insightErro);
@@ -97,18 +100,18 @@ namespace LeoDevTracker.API.Controllers
                 .Where(s => !string.IsNullOrWhiteSpace(s)));
 
             return $"""
-                Você é um mentor direto. Analise o registro de hoje e responda em exatamente 2 partes:
-                [Padrão] uma observação sobre o que os dados revelam (máximo 2 frases).
-                [Foco] uma ação específica e concreta para amanhã (máximo 1 frase).
+                Você é um mentor direto de Leo, dev em transição para júnior (foco em C#/.NET).
+                Com base nos dados do dia abaixo, escreva em português 2 frases curtas:
+                primeira frase: uma observação honesta sobre o que os dados revelam.
+                segunda frase: uma ação específica e concreta para fazer amanhã.
+                Não use listas, não use marcadores, não use emojis. Máximo 80 palavras.
 
-                Registro de {r.Data:dd/MM/yyyy}:
-                - O que fez: {(string.IsNullOrWhiteSpace(oQueFez) ? "não informado" : oQueFez)}
-                - Maior desafio: {r.Desafios ?? "não informado"}
-                - Horas de estudo: {r.HorasEstudo?.ToString("F1") ?? "0"}h em {r.TopicoEstudo ?? "não informado"}
-                - Humor: {r.Humor?.ToString() ?? "não informado"}/5
-                - Treino: {r.TreinoTipo ?? "não informado"}, rendimento {r.TreinoRendimento?.ToString() ?? "não informado"}/5
-
-                Contexto: dev em transição para júnior, foco em C#/.NET. Seja direto, sem elogios genéricos.
+                Dados de {r.Data:dd/MM/yyyy}:
+                Conquistas/destaque: {(string.IsNullOrWhiteSpace(oQueFez) ? "não informado" : oQueFez)}
+                Desafio: {r.Desafios ?? "não informado"}
+                Estudo: {r.HorasEstudo?.ToString("F1") ?? "0"}h em {r.TopicoEstudo ?? "não informado"}
+                Humor: {r.Humor?.ToString() ?? "?"}/5
+                Treino: {r.TreinoTipo ?? "nenhum"}, rendimento {r.TreinoRendimento?.ToString() ?? "?"}
                 """;
         }
 
@@ -122,26 +125,22 @@ namespace LeoDevTracker.API.Controllers
             }
 
             return $"""
-                Você é uma mentora que acompanha a Rafa de perto. Ela é psicóloga, 30 anos,
-                tende ao pensamento excessivo e ao desânimo quando perde o fio da rotina.
+                Você é uma mentora próxima da Rafa, psicóloga de 30 anos.
+                Com base nos dados do dia abaixo, escreva em português 3 frases curtas:
+                primeira frase: uma observação honesta sobre o dia sem elogios vazios.
+                segunda frase: uma ação pequena e concreta para amanhã.
+                terceira frase: uma mensagem de cuidado genuíno, não genérica.
+                Não use listas, não use marcadores, não use emojis. Máximo 100 palavras.
+                {(r.Humor <= 2 ? "Humor baixo: seja acolhedora antes de ser prática." : "")}
 
-                Analise o registro de hoje em 3 partes curtas:
-                [Padrão] Uma observação honesta sobre o dia — sem elogios vazios (máximo 2 frases).
-                [Foco] Uma ação pequena e concreta para amanhã (máximo 1 frase).
-                [Carinho] Uma mensagem curta de cuidado genuíno — não motivacional genérica, algo real (1 frase).
-
-                Registro de {r.Data:dd/MM/yyyy}:
-                - Humor: {r.Humor?.ToString() ?? "não informado"}/5
-                - Conquistas: {r.Conquistas ?? "nenhuma"}
-                - Desafios: {r.Desafios ?? "nenhum"}
-                - Gratidão: {extras?.Gratidao ?? "não registrada"}
-                - Atendimentos: {extras?.Atendimentos ?? 0}
-                - Treino: {r.TreinoTipo ?? "não informado"}, rendimento {r.TreinoRendimento?.ToString() ?? "não informado"}/5
-                - Qualidade do sono: {extras?.QualidadeSono?.ToString() ?? "não informado"}/5
-                - Água: {(extras?.AguaBebida == true ? "sim" : "não")}
-
-                {(r.Humor <= 2 ? "O humor está baixo — seja acolhedora antes de ser prática." : "")}
-                Máximo 100 palavras. Sem emoji.
+                Dados de {r.Data:dd/MM/yyyy}:
+                Humor: {r.Humor?.ToString() ?? "?"}/5
+                Conquistas: {r.Conquistas ?? "nenhuma"}
+                Desafios: {r.Desafios ?? "nenhum"}
+                Gratidão: {extras?.Gratidao ?? "não registrada"}
+                Atendimentos: {extras?.Atendimentos ?? 0}
+                Treino: {r.TreinoTipo ?? "nenhum"}, rendimento {r.TreinoRendimento?.ToString() ?? "?"}
+                Sono: {extras?.QualidadeSono?.ToString() ?? "?"}
                 """;
         }
 

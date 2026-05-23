@@ -4,12 +4,20 @@ function getToken() {
   return localStorage.getItem('tracker_token');
 }
 
-async function req(path, options = {}) {
+async function req(path, options = {}, timeoutMs = 15000) {
   const token = getToken();
   const headers = { 'Content-Type': 'application/json', ...options.headers };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal });
+  } finally {
+    clearTimeout(tid);
+  }
 
   if (res.status === 401) {
     localStorage.removeItem('tracker_token');
@@ -18,7 +26,11 @@ async function req(path, options = {}) {
     throw new Error('Sessão expirada');
   }
   if (res.status === 204) return null;
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const b = await res.json(); if (b?.error) msg = b.error; } catch {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -46,7 +58,7 @@ export const api = {
   atualizarMeta:      (id, body) => req(`/metas/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deletarMeta:        (id)       => req(`/metas/${id}`, { method: 'DELETE' }),
 
-  gerarAnalise:       ()         => req('/analise/gerar', { method: 'POST' }),
+  gerarAnalise:       ()         => req('/analise/gerar', { method: 'POST' }, 60000),
   getUltimaAnalise:   ()         => req('/analise/ultima'),
   getHistoricoAnalise:()         => req('/analise/historico'),
 

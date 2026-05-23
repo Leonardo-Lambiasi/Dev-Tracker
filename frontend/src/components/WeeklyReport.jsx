@@ -26,8 +26,8 @@ export default function WeeklyReport() {
       } else {
         setMsg(result?.message ?? 'Análise gerada sem conteúdo. Tente novamente.');
       }
-    } catch {
-      setMsg('Erro ao gerar análise. Tente novamente.');
+    } catch (err) {
+      setMsg(err?.message?.startsWith('HTTP') ? 'Erro ao gerar análise. Tente novamente.' : (err?.message ?? 'Erro ao gerar análise.'));
     } finally {
       setGerando(false);
     }
@@ -54,12 +54,18 @@ export default function WeeklyReport() {
             disabled={gerando}
             style={{ fontSize: 13 }}
           >
-            {gerando ? 'Gerando...' : 'Gerar análise'}
+            {gerando ? 'Gerando análise...' : 'Gerar análise'}
           </button>
         )}
       </div>
 
       {loading && <p className="muted">Carregando...</p>}
+
+      {gerando && (
+        <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>
+          Isso pode levar até 30 segundos...
+        </p>
+      )}
 
       {msg && (
         <div style={{

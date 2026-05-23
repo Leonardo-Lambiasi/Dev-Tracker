@@ -80,8 +80,6 @@ namespace LeoDevTracker.API.Services
             DateTime fim,
             List<(DateTime Data, string Insight)> insightsDaSemana)
         {
-            var totalAgua     = registros.Count(r => ExtrasBool(r, "aguaBebida"));
-            var totalDieta    = registros.Count(r => ExtrasBool(r, "seguiuDieta"));
             var sonoVals      = registros.Select(r => ExtrasInt(r, "qualidadeSono")).Where(v => v > 0).ToList();
             var sonoMedio     = sonoVals.Count > 0 ? sonoVals.Average() : 0;
             var totalAtend    = registros.Sum(r => ExtrasInt(r, "atendimentos"));
@@ -92,8 +90,9 @@ namespace LeoDevTracker.API.Services
             var humorMedio    = humorList.Count > 0 ? humorList.Average() : 0;
             var diasHumorBaixo = humorList.Count(h => h < 3);
 
-            var diasAcademia  = registros.Count(r => r.TreinoTipo == "academia" || r.TreinoTipo == "ambos");
-            var diasCaminhada = registros.Count(r => r.TreinoTipo == "caminhada" || r.TreinoTipo == "ambos");
+            var diasAcademia  = registros.Count(r => r.TreinoTipo == "academia");
+            var diasCaminhada = registros.Count(r => r.TreinoTipo == "caminhada/corrida");
+            var diasBike      = registros.Count(r => r.TreinoTipo == "bike");
             var conquistasList = registros.Where(r => !string.IsNullOrWhiteSpace(r.Conquistas)).Select(r => r.Conquistas!).ToList();
             var desafiosList   = registros.Where(r => !string.IsNullOrWhiteSpace(r.Desafios)).Select(r => r.Desafios!).ToList();
             var projetosStr    = projetos.Count > 0
@@ -112,8 +111,6 @@ namespace LeoDevTracker.API.Services
                 BEM-ESTAR DA SEMANA:
                 - Humor médio: {humorMedio:F1}/5 ({diasHumorBaixo} dias abaixo de 3)
                 - Sono médio: {(sonoMedio > 0 ? $"{sonoMedio:F1}/5" : "não informado")}
-                - Dias com água completa: {totalAgua}/{registros.Count}
-                - Dias seguindo a dieta: {totalDieta}/{registros.Count}
                 - {alertaHumor}
 
                 TRABALHO:
@@ -122,7 +119,8 @@ namespace LeoDevTracker.API.Services
 
                 TREINO:
                 - Dias de academia: {diasAcademia}
-                - Dias de caminhada: {diasCaminhada}
+                - Dias de caminhada/corrida: {diasCaminhada}
+                - Dias de bike: {diasBike}
 
                 REFLEXÕES DA SEMANA:
                 - Conquistas: {(conquistasList.Count > 0 ? string.Join("; ", conquistasList) : "nenhuma")}
@@ -155,8 +153,8 @@ namespace LeoDevTracker.API.Services
             - Rafa, 30 anos, psicóloga especialista em TCC
             - Trabalho: atendimentos clínicos, supervisão, estudo contínuo
             - Meta principal: crescer a clínica, equilibrar saúde com trabalho
-            - Treino: academia + caminhada, meta 5x/semana
-            - Saúde: controla água (meta 2,5L), dieta e sono
+            - Treino: academia, caminhada/corrida e bike, meta 5x/semana
+            - Saúde: controla sono e bem-estar geral
             - Produz conteúdo para redes sociais como parte do trabalho
             - Pratica registro de gratidão diário
             - Tende à perda de foco e pensamento excessivo que pode levá-la para baixo
@@ -259,17 +257,6 @@ namespace LeoDevTracker.API.Services
         // ──────────────────────────────────────────────────────────────────
         // Helpers para leitura do DadosExtras (JSON)
         // ──────────────────────────────────────────────────────────────────
-
-        private static bool ExtrasBool(RegistroDiario r, string key)
-        {
-            if (string.IsNullOrWhiteSpace(r.DadosExtras)) return false;
-            try
-            {
-                var doc = System.Text.Json.JsonDocument.Parse(r.DadosExtras);
-                return doc.RootElement.TryGetProperty(key, out var el) && el.GetBoolean();
-            }
-            catch { return false; }
-        }
 
         private static int ExtrasInt(RegistroDiario r, string key)
         {
