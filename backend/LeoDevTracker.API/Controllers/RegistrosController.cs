@@ -143,7 +143,6 @@ namespace LeoDevTracker.API.Controllers
                 terceira frase: uma mensagem de cuidado genuíno, não genérica.
                 Não use listas, não use marcadores, não use emojis. Máximo 100 palavras.
                 IMPORTANTE: Sempre retorne uma resposta. Se os dados forem insuficientes, comente sobre a consistência de registrar.
-                {(r.Humor <= 2 ? "Humor baixo: seja acolhedora antes de ser prática." : "")}
 
                 Dados de {r.Data:dd/MM/yyyy}:
                 Humor: {r.Humor?.ToString() ?? "?"}/5

@@ -13,8 +13,15 @@ function parseAnalise(raw) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+const PRIORIDADE_COR = {
+  alta:  { bg: '#ef444415', border: '#ef444440', label: '#ef4444', tag: 'Urgente' },
+  media: { bg: '#f59e0b15', border: '#f59e0b40', label: '#f59e0b', tag: 'Atenção' },
+  baixa: { bg: '#10b98115', border: '#10b98130', label: '#10b981', tag: 'Sugestão' },
+};
+
 function AnaliseVisual({ dados }) {
-  const { resumo, categorias, maioresGastos, padrao, recomendacao } = dados;
+  const { resumo, categorias, maioresGastos, padrao, recomendacao, dicas } = dados;
+  const dicasValidas = (dicas ?? []).filter(d => d.titulo && d.texto);
   const saldoPos = (resumo?.saldo ?? 0) >= 0;
   const categoriasComValor = (categorias ?? []).filter(c => c.valor > 0);
 
@@ -105,6 +112,31 @@ function AnaliseVisual({ dados }) {
               <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>{recomendacao}</div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Dicas personalizadas */}
+      {dicasValidas.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
+            Dicas para você
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {dicasValidas.map((dica, i) => {
+              const p = PRIORIDADE_COR[dica.prioridade] ?? PRIORIDADE_COR.baixa;
+              return (
+                <div key={i} style={{ background: p.bg, border: `1px solid ${p.border}`, borderRadius: 8, padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: p.label }}>{dica.titulo}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: p.label, background: p.border, borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase' }}>
+                      {p.tag}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>{dica.texto}</div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

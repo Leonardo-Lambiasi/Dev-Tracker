@@ -171,7 +171,7 @@ namespace LeoDevTracker.API.Services
             - Rafa, 30 anos, psicóloga especialista em TCC
             - Trabalho: atendimentos clínicos, supervisão, estudo contínuo
             - Meta principal: crescer a clínica, equilibrar saúde com trabalho
-            - Treino: academia, caminhada/corrida e bike, meta 5x/semana
+            - Treino: academia (meta 3x/semana), caminhada/corrida (meta 2x/semana), bike quando possível
             - Saúde: controla sono e bem-estar geral
             - Produz conteúdo para redes sociais como parte do trabalho
             - Pratica registro de gratidão diário

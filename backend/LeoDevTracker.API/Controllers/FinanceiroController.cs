@@ -116,15 +116,32 @@ namespace LeoDevTracker.API.Controllers
                     { "descricao": "Nome do gasto", "valor": 0.00, "data": "DD/MM" }
                   ],
                   "padrao": "Padrão de consumo em português (1-2 frases).",
-                  "recomendacao": "Recomendação prática em português (1-2 frases)."
+                  "recomendacao": "Recomendação prática em português (1-2 frases).",
+                  "dicas": [
+                    { "titulo": "Título curto da dica", "texto": "Explicação prática e específica baseada nos dados do extrato.", "prioridade": "alta" },
+                    { "titulo": "Título curto da dica", "texto": "Explicação prática e específica baseada nos dados do extrato.", "prioridade": "media" },
+                    { "titulo": "Título curto da dica", "texto": "Explicação prática e específica baseada nos dados do extrato.", "prioridade": "baixa" }
+                  ]
                 }
+
+                REGRAS PARA AS DICAS:
+                - Gere entre 2 e 4 dicas baseadas estritamente nos dados do extrato — não invente gastos que não existem
+                - "prioridade": "alta" = problema real e urgente (saldo negativo, gasto excessivo em categoria específica)
+                - "prioridade": "media" = oportunidade de melhoria clara
+                - "prioridade": "baixa" = sugestão de longo prazo (investimento, reserva de emergência)
+                - Se o saldo for positivo e sobrar dinheiro, dê uma dica sobre onde aplicar (reserva, investimento)
+                - Se houver muitas assinaturas, sugira revisar quais realmente usa
+                - Se alimentação/lazer passar de 30% das saídas, alerte com dica de prioridade alta
+                - Se as entradas forem irregulares (autônomo), sugira reserva de 3-6 meses de despesas fixas
+                - Seja específico: mencione valores e categorias reais do extrato nas dicas
+                - Tom: direto, sem julgamento, como um amigo que entende de finanças
 
                 Inclua apenas categorias com valor > 0. percentual = (valor / saidas) * 100. Use ponto para decimais. Retorne SOMENTE o JSON.
                 """;
 
             try
             {
-                var analiseRaw = await _ai.Enviar(prompt, AiModelos.Flash, 1500, jsonMode: true);
+                var analiseRaw = await _ai.Enviar(prompt, AiModelos.Flash, 2000, jsonMode: true);
                 var analise = analiseRaw.Replace("```json", "").Replace("```", "").Trim();
 
                 var registro = new AnaliseSemanal
