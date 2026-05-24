@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useModoCuidado } from '../hooks/useModoCuidado';
 import FocoProjetos from './FocoProjetos';
 import ProjectTracker from './ProjectTracker';
 import FinancePanel from './FinancePanel';
@@ -27,6 +28,14 @@ function extrasInt(registro, key) {
   } catch { return 0; }
 }
 
+function extrasStr(registro, key) {
+  if (!registro.dadosExtras) return null;
+  try {
+    const obj = JSON.parse(registro.dadosExtras);
+    return obj[key] ?? null;
+  } catch { return null; }
+}
+
 function humorCor(valor) {
   if (valor >= 4.5) return '#22c55e';
   if (valor >= 3.5) return '#84cc16';
@@ -45,6 +54,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [treinoColapsado, setTreinoColapsado] = useState(false);
+  const [rotinaColapsada, setRotinaColapsada] = useState(false);
+
+  const modoCuidado = useModoCuidado(semana);
 
   // Aplica tema por usuário
   useEffect(() => {
@@ -104,23 +117,24 @@ export default function Dashboard() {
   const hoje = localToday();
   const registrouHoje = semana.some(r => r.data?.slice(0, 10) === hoje);
 
-  // Detecta humor baixo nos últimos 3 dias
-  const ultimos3 = [...semana]
-    .filter(r => r.humor != null)
-    .slice(0, 3);
-  const humorUltimos3 = ultimos3.length >= 3
-    ? ultimos3.reduce((acc, r) => acc + r.humor, 0) / ultimos3.length
-    : null;
-  const mostrarBannerHumor = isRafa && !bannerDismissed && humorUltimos3 !== null && humorUltimos3 < 3;
+  const mostrarBannerHumor = isRafa && modoCuidado && !bannerDismissed;
 
   // Métricas Rafa — bem-estar
   const totalAtend = semana.reduce((acc, r) => acc + extrasInt(r, 'atendimentos'), 0);
   const totalConteudo = semana.reduce((acc, r) => acc + extrasInt(r, 'conteudoPostado'), 0);
 
   // Treino Rafa
-  const diasAcademiaRafa = semana.filter(r => r.treinoTipo === 'academia').length;
-  const diasCaminhadaRafa = semana.filter(r => r.treinoTipo === 'caminhada/corrida').length;
+  const diasAcademiaRafa = semana.filter(r => r.treinoTipo === 'academia' || r.treinoTipo === 'ambos').length;
+  const diasCaminhadaRafa = semana.filter(r => r.treinoTipo === 'caminhada/corrida' || r.treinoTipo === 'ambos').length;
   const diasBikeRafa = semana.filter(r => r.treinoTipo === 'bike').length;
+
+  // Card "Coisas boas" — Rafa
+  const gratidoesSemana = semana
+    .map(r => extrasStr(r, 'gratidao'))
+    .filter(g => g && g.trim());
+  const conquistasSemana = semana
+    .map(r => r.conquistas)
+    .filter(c => c && c.trim());
 
   // Gráfico de sono — Rafa
   const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -146,7 +160,8 @@ export default function Dashboard() {
   // Pizza — tópicos estudados
   const topicosMap = {};
   historico.forEach(r => {
-    if (r.topicoEstudo) topicosMap[r.topicoEstudo] = (topicosMap[r.topicoEstudo] || 0) + 1;
+    if (r.topicoEstudo && r.horasEstudo > 0)
+      topicosMap[r.topicoEstudo] = (topicosMap[r.topicoEstudo] || 0) + (r.horasEstudo ?? 0);
   });
   const topicosData = Object.entries(topicosMap)
     .map(([name, value]) => ({ name, value }))
@@ -163,23 +178,25 @@ export default function Dashboard() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
 
-      {/* Banner humor baixo — Rafa */}
+      {/* Banner modo cuidado — Rafa */}
       {mostrarBannerHumor && (
         <div style={{
-          background: '#9333ea15', border: '1px solid #9333ea40',
-          borderRadius: 12, padding: '14px 20px',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+          background: '#f3e8ff', border: '0.5px solid #d8b4fe',
+          borderRadius: 12, padding: '16px 20px', marginBottom: 4,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
         }}>
-          <span style={{ fontSize: 14, color: '#d8b4fe', lineHeight: 1.5 }}>
-            Parece que foi uma semana pesada. Lembre-se de cuidar de você também. 💜
-          </span>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: '#581c87', marginBottom: 4 }}>
+              Esta semana foi difícil. Tudo bem descansar. 💜
+            </div>
+            <div style={{ fontSize: 13, color: '#7c3aed' }}>
+              O app está aqui pra te ajudar a se ver com mais gentileza.
+            </div>
+          </div>
           <button
             type="button"
             onClick={() => setBannerDismissed(true)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: '#9333ea', fontSize: 18, lineHeight: 1, flexShrink: 0,
-            }}
+            style={{ background: 'none', border: 'none', color: '#9333ea', cursor: 'pointer', fontSize: 18 }}
           >
             ×
           </button>
@@ -210,75 +227,98 @@ export default function Dashboard() {
         <>
           <div>
             <h2 className="section-title">Bem-estar da semana</h2>
-            <div className="grid-4">
-              <div className="card">
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Humor médio
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: humorMedio ? humorCor(humorMedio) : '#64748b', lineHeight: 1 }}>
-                  {humorMedio ? `${humorMedio.toFixed(1)}/5` : '—'}
-                </div>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>essa semana</div>
-              </div>
-
-              <div className="card">
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Atendimentos
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: '#9333ea', lineHeight: 1 }}>
-                  {totalAtend}
-                </div>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>essa semana</div>
-              </div>
-
-              <div className="card" style={{ gridColumn: 'span 2' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    Conteúdo
+            {!modoCuidado && (
+              <div className="grid-4" style={{ marginBottom: 16 }}>
+                <div className="card">
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Humor médio
                   </div>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: totalConteudo >= 3 ? '#22c55e' : '#9333ea' }}>
-                    {totalConteudo}/3 posts
-                  </span>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: humorMedio ? humorCor(humorMedio) : '#64748b', lineHeight: 1 }}>
+                    {humorMedio ? `${humorMedio.toFixed(1)}/5` : '—'}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>essa semana</div>
                 </div>
-                <div style={{ background: '#2a2d3e', borderRadius: 6, height: 8, overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${Math.min((totalConteudo / 3) * 100, 100)}%`,
-                    height: '100%',
-                    background: totalConteudo >= 3 ? '#22c55e' : '#9333ea',
-                    borderRadius: 6,
-                    transition: 'width 0.4s',
-                  }} />
+
+                <div className="card">
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Atendimentos
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: '#9333ea', lineHeight: 1 }}>
+                    {totalAtend}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>essa semana</div>
                 </div>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
-                  {totalConteudo >= 3 ? 'Meta da semana batida!' : 'meta: 3 por semana'}
+
+                <div className="card">
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Conteúdo postado
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: '#9333ea', lineHeight: 1 }}>{totalConteudo}</div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>essa semana</div>
                 </div>
               </div>
+            )}
+
+            {/* Card "Coisas boas" — sempre visível para Rafa */}
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="section-title" style={{ marginBottom: 12 }}>Coisas boas dessa semana</div>
+              {gratidoesSemana.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: '#9333ea', fontWeight: 600, marginBottom: 6 }}>Gratidões</div>
+                  {gratidoesSemana.map((g, i) => (
+                    <div key={i} style={{ fontSize: 13, fontStyle: 'italic', color: '#cbd5e1', marginBottom: 4 }}>"{g}"</div>
+                  ))}
+                </div>
+              )}
+              {conquistasSemana.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, color: '#9333ea', fontWeight: 600, marginBottom: 6 }}>Conquistas</div>
+                  {conquistasSemana.map((c, i) => (
+                    <div key={i} style={{ fontSize: 13, color: '#cbd5e1', marginBottom: 4 }}>• {c}</div>
+                  ))}
+                </div>
+              )}
+              {gratidoesSemana.length === 0 && conquistasSemana.length === 0 && (
+                <div style={{ fontSize: 13, color: '#64748b', fontStyle: 'italic' }}>
+                  Você registrou essa semana. Isso já é muito.
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Treino stats Rafa — timeline horizontal */}
+          {/* Treino stats Rafa */}
           <div className="card">
-          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Treino da semana
-          </div>
-          <div style={{ display: 'flex', gap: 0, alignItems: 'center', flexWrap: 'wrap' }}>
-            {[
-              { label: 'Academia', valor: diasAcademiaRafa, cor: '#9333ea' },
-              { label: 'Caminhada', valor: diasCaminhadaRafa, cor: '#8b5cf6' },
-              { label: 'Bike', valor: diasBikeRafa, cor: '#a78bfa' },
-              { label: 'Rendimento', valor: resumo?.rendimentoTreinoMedio ? `${Number(resumo.rendimentoTreinoMedio).toFixed(1)}/5` : '—', cor: '#6366f1', raw: true },
-            ].map((item, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
-                {i > 0 && <div style={{ width: 1, height: 40, background: '#2a2d3e', flexShrink: 0 }} />}
-                <div style={{ textAlign: 'center', flex: 1, padding: '4px 12px' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: item.cor }}>
-                    {item.raw ? item.valor : `${item.valor}x`}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{item.label}</div>
-                </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: modoCuidado && treinoColapsado ? 0 : 16 }}>
+              <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Treino da semana
               </div>
-            ))}
-          </div>
+              {modoCuidado && (
+                <button type="button" onClick={() => setTreinoColapsado(v => !v)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#9333ea' }}>
+                  {treinoColapsado ? 'ver treinos' : 'ocultar'}
+                </button>
+              )}
+            </div>
+            {(!modoCuidado || !treinoColapsado) && (
+              <div style={{ display: 'flex', gap: 0, alignItems: 'center', flexWrap: 'wrap' }}>
+                {[
+                  { label: 'Academia', valor: diasAcademiaRafa, cor: '#9333ea' },
+                  { label: 'Caminhada', valor: diasCaminhadaRafa, cor: '#8b5cf6' },
+                  { label: 'Bike', valor: diasBikeRafa, cor: '#a78bfa' },
+                  { label: 'Rendimento', valor: resumo?.rendimentoTreinoMedio ? `${Number(resumo.rendimentoTreinoMedio).toFixed(1)}/5` : '—', cor: '#6366f1', raw: true },
+                ].map((item, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
+                    {i > 0 && <div style={{ width: 1, height: 40, background: '#2a2d3e', flexShrink: 0 }} />}
+                    <div style={{ textAlign: 'center', flex: 1, padding: '4px 12px' }}>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: item.cor }}>
+                        {item.raw ? item.valor : `${item.valor}x`}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{item.label}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}
@@ -373,7 +413,7 @@ export default function Dashboard() {
                   <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={100} />
                   <Tooltip {...tooltipStyle} />
-                  <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} name="Vezes" />
+                  <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} name="Horas" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -382,7 +422,20 @@ export default function Dashboard() {
       </div>
 
       <FocoProjetos />
-      <WeeklyGrid />
+      {isRafa && modoCuidado ? (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 14, color: '#94a3b8' }}>Rotina semanal</span>
+            <button type="button" onClick={() => setRotinaColapsada(v => !v)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#9333ea' }}>
+              {rotinaColapsada ? 'ver rotina' : 'ocultar'}
+            </button>
+          </div>
+          {!rotinaColapsada && <div style={{ marginTop: 16 }}><WeeklyGrid /></div>}
+        </div>
+      ) : (
+        <WeeklyGrid />
+      )}
       <ProjectTracker />
       <FinancePanel />
       <ExtratoPanel />

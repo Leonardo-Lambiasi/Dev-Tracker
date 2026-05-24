@@ -4,6 +4,8 @@ using LeoDevTracker.API.Models;
 using LeoDevTracker.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using UglyToad.PdfPig;
+using UglyToad.PdfPig.Content;
 
 namespace LeoDevTracker.API.Controllers
 {
@@ -29,9 +31,70 @@ namespace LeoDevTracker.API.Controllers
             if (string.IsNullOrWhiteSpace(request.Extrato))
                 return BadRequest(new { error = "O extrato não pode estar vazio." });
 
-            var extrato = request.Extrato;
+            return await Analisar(usuario, request.Extrato);
+        }
+
+        [HttpPost("analisar-pdf")]
+        [RequestSizeLimit(10 * 1024 * 1024)] // 10 MB
+        public async Task<IActionResult> AnalisarPdf(IFormFile arquivo)
+        {
+            var usuario = UsuarioHelper.GetUsuario(User)!;
+
+            if (arquivo == null || arquivo.Length == 0)
+                return BadRequest(new { error = "Nenhum arquivo enviado." });
+
+            if (!arquivo.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) &&
+                arquivo.ContentType != "application/pdf")
+                return BadRequest(new { error = "Apenas arquivos PDF são aceitos." });
+
+            string textoExtraido;
+            try
+            {
+                using var stream = arquivo.OpenReadStream();
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                textoExtraido = ExtrairTextoPdf(ms.ToArray());
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = $"Não foi possível ler o PDF: {ex.Message}" });
+            }
+
+            if (string.IsNullOrWhiteSpace(textoExtraido))
+                return BadRequest(new { error = "O PDF não contém texto legível. Tente colar o extrato manualmente." });
+
+            return await Analisar(usuario, textoExtraido);
+        }
+
+        private static string ExtrairTextoPdf(byte[] bytes)
+        {
+            using var pdf = PdfDocument.Open(bytes);
+            var sb = new System.Text.StringBuilder();
+            foreach (Page page in pdf.GetPages())
+            {
+                sb.AppendLine(page.Text);
+            }
+            return sb.ToString();
+        }
+
+        private async Task<IActionResult> Analisar(string usuario, string extrato)
+        {
+            var contexto = usuario == "rafa"
+                ? "Rafa, 30 anos, psicóloga autônoma no Brasil"
+                : "Leo, 26 anos, desenvolvedor em São Paulo no Brasil";
+
             var prompt = $$"""
+                Você é um assistente financeiro pessoal de {{contexto}}.
                 Analise o extrato bancário abaixo e retorne APENAS um objeto JSON válido, sem markdown, sem texto adicional.
+
+                REGRAS CRÍTICAS PARA CLASSIFICAR ENTRADAS E SAÍDAS:
+                - "entradas" = SOMENTE valores recebidos/creditados (salário, PIX recebido, depósito, transferência recebida)
+                - "saidas" = SOMENTE valores gastos/debitados (compras, pagamentos, PIX enviado, débito automático)
+                - NUNCA inclua uma entrada nas saídas, nem uma saída nas entradas
+                - Valores com "-", "débito", "debit", "pagamento", "compra" = saída
+                - Valores com "+", "crédito", "credit", "recebido", "salário", "depósito" = entrada
+                - "saldo" = entradas - saidas (pode ser negativo)
+                - Todas as chaves numéricas devem ser positivas (use valor absoluto)
 
                 EXTRATO:
                 {{extrato}}
@@ -56,7 +119,7 @@ namespace LeoDevTracker.API.Controllers
                   "recomendacao": "Recomendação prática em português (1-2 frases)."
                 }
 
-                Inclua apenas categorias com valor > 0. Use ponto para decimais. Retorne SOMENTE o JSON.
+                Inclua apenas categorias com valor > 0. percentual = (valor / saidas) * 100. Use ponto para decimais. Retorne SOMENTE o JSON.
                 """;
 
             try

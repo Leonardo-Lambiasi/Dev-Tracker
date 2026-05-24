@@ -154,7 +154,7 @@ export default function DailyForm({ onSuccess }) {
   });
 
   const treinoOpcoes = isRafa
-    ? ['academia', 'caminhada/corrida', 'bike', 'nenhum']
+    ? ['academia', 'caminhada/corrida', 'bike', 'ambos', 'nenhum']
     : ['academia', 'volei', 'ambos', 'nenhum'];
 
   const sectionsDefault = isRafa
@@ -300,7 +300,7 @@ export default function DailyForm({ onSuccess }) {
 
         <div className="field">
           <label>Data</label>
-          <input type="date" value={data} onChange={e => setData(e.target.value)} />
+          <input type="date" value={data} max={localToday()} onChange={e => setData(e.target.value)} />
         </div>
 
         <div className="field" style={{ marginBottom: 0 }}>
@@ -311,6 +311,11 @@ export default function DailyForm({ onSuccess }) {
           <HumorBtns value={humor} onChange={setHumor} colorido={isRafa} />
           {!humor && erro && (
             <p style={{ color: '#ef4444', fontSize: 12, marginTop: 6 }}>{erro}</p>
+          )}
+          {isRafa && humor !== null && humor <= 2 && (
+            <div style={{ background: '#f3e8ff', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#7c3aed', marginTop: 8 }}>
+              Obrigada por registrar mesmo assim 💜
+            </div>
           )}
         </div>
       </div>
@@ -328,31 +333,36 @@ export default function DailyForm({ onSuccess }) {
             <RatingBtns value={extras.qualidadeSono} onChange={v => setExtra('qualidadeSono', v)} />
           </div>
 
-          <div className="grid-2">
-            <div className="field">
-              <label>Atendimentos realizados</label>
-              <input
-                type="number" min="0"
-                placeholder="ex: 5"
-                value={extras.atendimentos}
-                onChange={e => setExtra('atendimentos', e.target.value)}
-              />
+          {humor !== null && humor <= 2 ? (
+            <div style={{ fontSize: 12, color: '#9333ea', marginBottom: 8, fontStyle: 'italic' }}>
+              opcional — só se quiser registrar
             </div>
-            <div className="field">
-              <label>Conteúdos postados</label>
-              <input
-                type="number" min="0"
-                placeholder="ex: 1"
-                value={extras.conteudoPostado}
-                onChange={e => setExtra('conteudoPostado', e.target.value)}
-              />
+          ) : null}
+          {(humor === null || humor > 2) && (
+            <div className="grid-2">
+              <div className="field">
+                <label>Atendimentos realizados</label>
+                <input
+                  type="number" min="0"
+                  value={extras.atendimentos}
+                  onChange={e => setExtra('atendimentos', e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label>Conteúdos postados</label>
+                <input
+                  type="number" min="0"
+                  value={extras.conteudoPostado}
+                  onChange={e => setExtra('conteudoPostado', e.target.value)}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Gratidão do dia</label>
             <textarea
-              placeholder="Pelo que você é grata hoje?"
+              placeholder="Pode ser algo pequeno mesmo..."
               value={extras.gratidao}
               onChange={e => setExtra('gratidao', e.target.value)}
             />
@@ -490,9 +500,9 @@ export default function DailyForm({ onSuccess }) {
           />
         </div>
         <div className="field">
-          <label>Desafios</label>
+          <label>O que foi difícil</label>
           <textarea
-            placeholder={isRafa ? 'O que foi difícil ou pesado?' : 'O que travou? Bloqueios, dificuldades, distrações...'}
+            placeholder={isRafa ? 'O que pesou hoje?' : 'O que travou? Bloqueios, dificuldades, distrações...'}
             value={desafios}
             onChange={e => setDesafios(e.target.value)}
           />

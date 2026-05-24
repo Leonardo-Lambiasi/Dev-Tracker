@@ -23,6 +23,16 @@ namespace LeoDevTracker.API.Controllers
         public async Task<IActionResult> Create(RegistroDiario registro, [FromServices] IAiService ai)
         {
             var usuario = UsuarioHelper.GetUsuario(User)!;
+
+            var dataLocal = registro.Data.Date;
+            var jaExiste = await _db.RegistrosDiarios
+                .AnyAsync(r => r.Usuario == usuario && r.Data.Date == dataLocal);
+            if (jaExiste)
+            {
+                var dtStr = dataLocal.ToString("dd/MM/yyyy");
+                return Conflict(new { error = $"Você já tem um registro para {dtStr}. Exclua o anterior pelo Histórico para registrar novamente." });
+            }
+
             registro.Id = Guid.NewGuid();
             registro.CriadoEm = DateTime.UtcNow;
             registro.Usuario = usuario;
@@ -37,7 +47,7 @@ namespace LeoDevTracker.API.Controllers
             try
             {
                 var prompt = usuario == "rafa"
-                    ? MontarPromptInsightRafa(registro)
+                    ? (registro.Humor <= 2 ? MontarPromptRafaCuidado(registro) : MontarPromptInsightRafa(registro))
                     : MontarPromptInsightLeo(registro);
                 var insight = await ai.Enviar(prompt, AiModelos.Flash, maxTokens: 500);
                 registro.InsightDiario = string.IsNullOrWhiteSpace(insight) ? insightFallback : insight;
@@ -105,6 +115,7 @@ namespace LeoDevTracker.API.Controllers
                 primeira frase: uma observação honesta sobre o que os dados revelam.
                 segunda frase: uma ação específica e concreta para fazer amanhã.
                 Não use listas, não use marcadores, não use emojis. Máximo 80 palavras.
+                IMPORTANTE: Sempre retorne uma resposta. Se os dados forem insuficientes, comente sobre a consistência de registrar.
 
                 Dados de {r.Data:dd/MM/yyyy}:
                 Conquistas/destaque: {(string.IsNullOrWhiteSpace(oQueFez) ? "não informado" : oQueFez)}
@@ -131,6 +142,7 @@ namespace LeoDevTracker.API.Controllers
                 segunda frase: uma ação pequena e concreta para amanhã.
                 terceira frase: uma mensagem de cuidado genuíno, não genérica.
                 Não use listas, não use marcadores, não use emojis. Máximo 100 palavras.
+                IMPORTANTE: Sempre retorne uma resposta. Se os dados forem insuficientes, comente sobre a consistência de registrar.
                 {(r.Humor <= 2 ? "Humor baixo: seja acolhedora antes de ser prática." : "")}
 
                 Dados de {r.Data:dd/MM/yyyy}:
@@ -248,6 +260,29 @@ namespace LeoDevTracker.API.Controllers
             await _db.SaveChangesAsync();
             return NoContent();
         }
+
+        private static string MontarPromptRafaCuidado(RegistroDiario r) => $"""
+            Você é uma amiga próxima da Rafa, psicóloga de 30 anos passando por um dia difícil.
+            Ela registrou humor {r.Humor}/5 hoje.
+
+            O que ela registrou:
+            - Conquistas: {r.Conquistas ?? "não registrou"}
+            - Gratidão: {Helpers.ExtrasHelper.GetString(r.DadosExtras, "gratidao") ?? "não registrou"}
+            - Treino: {r.TreinoTipo ?? "não registrou"}
+
+            Responda em 2 partes:
+            [Acolhimento] Reconheça que foi difícil — sem minimizar, sem elogios vazios. 1-2 frases.
+            [Amanhã] UMA coisa pequena e gentil para amanhã — algo que ela consiga mesmo cansada.
+
+            REGRAS:
+            - Não mencione produtividade, metas, atendimentos ou trabalho
+            - Não compare com outras semanas
+            - Sem frases de coach ou motivacionais
+            - Tom: amiga que entende, não terapeuta
+            - Máximo 60 palavras
+            - Se não registrou gratidão nem conquistas: reconheça o ato de ter registrado como força
+            - IMPORTANTE: Sempre retorne uma resposta, nunca retorne vazio
+            """;
     }
 
     // DTO para deserializar os extras da Rafa

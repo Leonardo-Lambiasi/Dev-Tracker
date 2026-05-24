@@ -94,7 +94,7 @@ export default function WeeklyReport() {
           </div>
           {!podGerar && (
             <p className="muted" style={{ marginTop: 16, fontSize: 12 }}>
-              Próxima análise disponível em {Math.ceil(7 - diasDesdeUltima())} dia(s).
+              Próxima análise disponível em {Math.ceil(3 - diasDesdeUltima())} dia(s).
             </p>
           )}
         </>

@@ -62,7 +62,25 @@ export const api = {
   getUltimaAnalise:   ()         => req('/analise/ultima'),
   getHistoricoAnalise:()         => req('/analise/historico'),
 
-  analisarExtrato:    (extrato)  => req('/financeiro/analisar-extrato', { method: 'POST', body: JSON.stringify({ extrato }) }),
+  analisarExtrato:    (extrato)  => req('/financeiro/analisar-extrato', { method: 'POST', body: JSON.stringify({ extrato }) }, 45000),
+
+  analisarPdf: (arquivo) => {
+    const token = getToken();
+    const form = new FormData();
+    form.append('arquivo', arquivo);
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 60000);
+    return fetch(`${BASE}/financeiro/analisar-pdf`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+      signal: controller.signal,
+    }).finally(() => clearTimeout(tid)).then(async res => {
+      if (res.status === 401) { localStorage.removeItem('tracker_token'); localStorage.removeItem('tracker_user'); window.location.href = '/login'; return; }
+      if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b?.error ?? `HTTP ${res.status}`); }
+      return res.json();
+    });
+  },
   getHistoricoFinanceiro: ()     => req('/analise/historico?tipo=financeiro'),
 
   listarRotina:       ()         => req('/rotina'),

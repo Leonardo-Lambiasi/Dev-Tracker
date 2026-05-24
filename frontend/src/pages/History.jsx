@@ -18,7 +18,8 @@ function RafaExtrasRow({ dadosExtras }) {
     extras.atendimentos && `${extras.atendimentos} atend.`,
   ].filter(Boolean);
   const gratidao = extras.gratidao || null;
-  const snippet = gratidao ? gratidao.split('\n')[0].slice(0, 80) + (gratidao.length > 80 ? '…' : '') : null;
+  const firstLine = gratidao ? gratidao.split('\n')[0] : '';
+  const snippet = gratidao ? firstLine.slice(0, 60) + (firstLine.length > 60 ? '…' : '') : null;
   if (!partes.length && !snippet) return null;
   return (
     <>
@@ -139,7 +140,7 @@ export default function History() {
                 )}
                 {r.desafios && (
                   <div style={{ width: '100%', fontSize: 13, color: '#94a3b8' }}>
-                    <span style={{ color: '#64748b' }}>Desafios: </span>{r.desafios}
+                    <span style={{ color: '#64748b' }}>O que foi difícil: </span>{r.desafios}
                   </div>
                 )}
                 {isRafa && <RafaExtrasRow dadosExtras={r.dadosExtras} />}

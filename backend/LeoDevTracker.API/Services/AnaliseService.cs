@@ -1,4 +1,5 @@
 using LeoDevTracker.API.Data;
+using LeoDevTracker.API.Helpers;
 using LeoDevTracker.API.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,11 +9,13 @@ namespace LeoDevTracker.API.Services
     {
         private readonly AppDbContext _db;
         private readonly IAiService _ai;
+        private readonly ILogger<AnaliseService> _logger;
 
-        public AnaliseService(AppDbContext db, IAiService ai)
+        public AnaliseService(AppDbContext db, IAiService ai, ILogger<AnaliseService> logger)
         {
             _db = db;
             _ai = ai;
+            _logger = logger;
         }
 
         public async Task<AnaliseSemanal> GerarAnaliseSemanal(string usuario)
@@ -51,7 +54,9 @@ namespace LeoDevTracker.API.Services
                 ? MontarPromptRafa(registros, anteriores, projetos, inicio, fim, insightsDaSemana)
                 : MontarPromptLeo(registros, anteriores, projetos, inicio, fim, insightsDaSemana, resumoFinanceiro);
 
-            var conteudo = await _ai.Enviar(prompt, AiModelos.Flash, maxTokens: 1200, thinkingBudget: 8000);
+            _logger.LogInformation("GerarAnaliseSemanal: chamando Gemini para {Usuario}, registros={Count}", usuario, registros.Count);
+            var conteudo = await _ai.Enviar(prompt, AiModelos.Flash, maxTokens: 1200, thinkingBudget: 2048);
+            _logger.LogInformation("GerarAnaliseSemanal: Gemini respondeu {Chars} chars para {Usuario}", conteudo?.Length ?? 0, usuario);
 
             var analise = new AnaliseSemanal
             {
@@ -80,18 +85,18 @@ namespace LeoDevTracker.API.Services
             DateTime fim,
             List<(DateTime Data, string Insight)> insightsDaSemana)
         {
-            var sonoVals      = registros.Select(r => ExtrasInt(r, "qualidadeSono")).Where(v => v > 0).ToList();
+            var sonoVals      = registros.Select(r => ExtrasHelper.GetInt(r.DadosExtras, "qualidadeSono")).Where(v => v > 0).ToList();
             var sonoMedio     = sonoVals.Count > 0 ? sonoVals.Average() : 0;
-            var totalAtend    = registros.Sum(r => ExtrasInt(r, "atendimentos"));
-            var totalConteudo = registros.Sum(r => ExtrasInt(r, "conteudoPostado"));
-            var gratidoes     = registros.Select(r => ExtrasStr(r, "gratidao")).Where(g => !string.IsNullOrWhiteSpace(g)).ToList();
+            var totalAtend    = registros.Sum(r => ExtrasHelper.GetInt(r.DadosExtras, "atendimentos"));
+            var totalConteudo = registros.Sum(r => ExtrasHelper.GetInt(r.DadosExtras, "conteudoPostado"));
+            var gratidoes     = registros.Select(r => ExtrasHelper.GetString(r.DadosExtras, "gratidao")).Where(g => !string.IsNullOrWhiteSpace(g)).ToList();
 
             var humorList     = registros.Where(r => r.Humor.HasValue).Select(r => (double)r.Humor!.Value).ToList();
             var humorMedio    = humorList.Count > 0 ? humorList.Average() : 0;
             var diasHumorBaixo = humorList.Count(h => h < 3);
 
-            var diasAcademia  = registros.Count(r => r.TreinoTipo == "academia");
-            var diasCaminhada = registros.Count(r => r.TreinoTipo == "caminhada/corrida");
+            var diasAcademia  = registros.Count(r => r.TreinoTipo == "academia" || r.TreinoTipo == "ambos");
+            var diasCaminhada = registros.Count(r => r.TreinoTipo == "caminhada/corrida" || r.TreinoTipo == "ambos");
             var diasBike      = registros.Count(r => r.TreinoTipo == "bike");
             var conquistasList = registros.Where(r => !string.IsNullOrWhiteSpace(r.Conquistas)).Select(r => r.Conquistas!).ToList();
             var desafiosList   = registros.Where(r => !string.IsNullOrWhiteSpace(r.Desafios)).Select(r => r.Desafios!).ToList();
@@ -103,8 +108,21 @@ namespace LeoDevTracker.API.Services
                 ? "ATENÇÃO: 3 ou mais dias com humor abaixo de 3 esta semana. Priorize isso na análise."
                 : "Humor estável.";
 
+            var modoCuidadoBloco = diasHumorBaixo >= 2 ? $"""
+
+                ATENÇÃO — SEMANA DIFÍCIL ({diasHumorBaixo} dias com humor ≤ 2):
+                - Comece reconhecendo o esforço de ter chegado até aqui
+                - Não abra com metas não atingidas
+                - Não compare com semanas anteriores
+                - Mencione ao menos uma coisa concreta e boa que ela fez
+                - "O que pode melhorar": máximo 1 ponto, tom gentil
+                - Finalize sugerindo conversar com alguém de confiança se a semana pesada continuar — sem drama, como cuidado genuíno
+                - Tom: parceira que vê os dados e se importa, não coach
+                """ : "";
+
             return $"""
                 Você é uma mentora próxima da Rafa. Analise a semana de {inicio:dd/MM/yyyy} a {fim:dd/MM/yyyy}.
+                {modoCuidadoBloco}
 
                 {PerfilRafa()}
 
@@ -254,30 +272,5 @@ namespace LeoDevTracker.API.Services
                 """;
         }
 
-        // ──────────────────────────────────────────────────────────────────
-        // Helpers para leitura do DadosExtras (JSON)
-        // ──────────────────────────────────────────────────────────────────
-
-        private static int ExtrasInt(RegistroDiario r, string key)
-        {
-            if (string.IsNullOrWhiteSpace(r.DadosExtras)) return 0;
-            try
-            {
-                var doc = System.Text.Json.JsonDocument.Parse(r.DadosExtras);
-                return doc.RootElement.TryGetProperty(key, out var el) ? el.GetInt32() : 0;
-            }
-            catch { return 0; }
-        }
-
-        private static string? ExtrasStr(RegistroDiario r, string key)
-        {
-            if (string.IsNullOrWhiteSpace(r.DadosExtras)) return null;
-            try
-            {
-                var doc = System.Text.Json.JsonDocument.Parse(r.DadosExtras);
-                return doc.RootElement.TryGetProperty(key, out var el) ? el.GetString() : null;
-            }
-            catch { return null; }
-        }
     }
 }

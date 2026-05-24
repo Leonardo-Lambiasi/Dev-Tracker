@@ -112,7 +112,9 @@ function AnaliseVisual({ dados }) {
 }
 
 export default function ExtratoPanel() {
+  const [modo, setModo] = useState('texto'); // 'texto' | 'pdf'
   const [extrato, setExtrato] = useState('');
+  const [pdfArquivo, setPdfArquivo] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
@@ -126,12 +128,18 @@ export default function ExtratoPanel() {
   }, []);
 
   async function analisar() {
-    if (!extrato.trim()) { setErro('Cole o extrato antes de analisar.'); return; }
     setLoading(true);
     setErro('');
     setResultado(null);
     try {
-      const data = await api.analisarExtrato(extrato.trim());
+      let data;
+      if (modo === 'pdf') {
+        if (!pdfArquivo) { setErro('Selecione um arquivo PDF.'); setLoading(false); return; }
+        data = await api.analisarPdf(pdfArquivo);
+      } else {
+        if (!extrato.trim()) { setErro('Cole o extrato antes de analisar.'); setLoading(false); return; }
+        data = await api.analisarExtrato(extrato.trim());
+      }
       const raw = data.analise;
       const dados = parseAnalise(raw);
       setResultado({ raw, dados });
@@ -139,7 +147,7 @@ export default function ExtratoPanel() {
     } catch (e) {
       setErro(e.message?.includes('500')
         ? 'Erro no servidor. Verifique se a API key do Gemini está configurada.'
-        : 'Erro ao analisar extrato. Tente novamente.');
+        : (e.message ?? 'Erro ao analisar. Tente novamente.'));
     } finally {
       setLoading(false);
     }
@@ -147,30 +155,70 @@ export default function ExtratoPanel() {
 
   function limpar() {
     setExtrato('');
+    setPdfArquivo(null);
     setResultado(null);
     setErro('');
   }
+
+  const podeAnalisar = modo === 'pdf' ? !!pdfArquivo : !!extrato.trim();
 
   return (
     <div className="card" style={{ borderColor: '#10b98140' }}>
       <div style={{ marginBottom: 16 }}>
         <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Análise de extrato — IA</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          Cole o extrato do banco (texto, CSV, tabela) e a IA categoriza e identifica padrões.
+          Cole o extrato em texto ou envie o PDF do banco — a IA categoriza e identifica padrões.
         </p>
       </div>
 
       {!resultado ? (
         <>
-          <div className="field">
-            <label>Extrato bancário</label>
-            <textarea
-              value={extrato}
-              onChange={e => { setExtrato(e.target.value); setErro(''); }}
-              placeholder={`Cole aqui o extrato. Exemplo:\n\n19/05 PIX recebido - Salário       R$ 3.500,00\n19/05 Débito - Aluguel             R$ 900,00\n20/05 Débito - Supermercado        R$ 230,50\n20/05 Débito - Uber                R$ 18,90`}
-              style={{ minHeight: 200, fontFamily: 'monospace', fontSize: 13 }}
-            />
+          {/* Seletor de modo */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {['texto', 'pdf'].map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setModo(m); setErro(''); }}
+                style={{
+                  padding: '6px 16px', borderRadius: 8, border: '1px solid',
+                  borderColor: modo === m ? '#10b981' : '#2a2d3e',
+                  background: modo === m ? '#10b98115' : 'transparent',
+                  color: modo === m ? '#10b981' : '#94a3b8',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 500,
+                }}
+              >
+                {m === 'texto' ? 'Colar texto' : 'Enviar PDF'}
+              </button>
+            ))}
           </div>
+
+          {modo === 'texto' ? (
+            <div className="field">
+              <label>Extrato bancário</label>
+              <textarea
+                value={extrato}
+                onChange={e => { setExtrato(e.target.value); setErro(''); }}
+                placeholder={`Cole aqui o extrato. Exemplo:\n\n19/05 PIX recebido - Salário       R$ 3.500,00\n19/05 Débito - Aluguel             R$ 900,00\n20/05 Débito - Supermercado        R$ 230,50`}
+                style={{ minHeight: 180, fontFamily: 'monospace', fontSize: 13 }}
+              />
+            </div>
+          ) : (
+            <div className="field">
+              <label>Arquivo PDF do extrato</label>
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={e => { setPdfArquivo(e.target.files?.[0] ?? null); setErro(''); }}
+                style={{ fontSize: 13, color: '#cbd5e1' }}
+              />
+              {pdfArquivo && (
+                <div style={{ fontSize: 12, color: '#10b981', marginTop: 6 }}>
+                  {pdfArquivo.name} ({(pdfArquivo.size / 1024).toFixed(0)} KB)
+                </div>
+              )}
+            </div>
+          )}
 
           {erro && <p style={{ color: '#fca5a5', fontSize: 13, marginBottom: 12 }}>{erro}</p>}
 
@@ -178,9 +226,9 @@ export default function ExtratoPanel() {
             type="button"
             className="btn btn-primary"
             onClick={analisar}
-            disabled={loading || !extrato.trim()}
+            disabled={loading || !podeAnalisar}
           >
-            {loading ? 'Analisando... pode levar até 20s' : 'Analisar com IA'}
+            {loading ? 'Analisando... pode levar até 30s' : 'Analisar com IA'}
           </button>
         </>
       ) : (

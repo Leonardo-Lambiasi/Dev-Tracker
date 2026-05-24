@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { labelTreino } from '../utils/linguagem';
 
 function inicioSemana(date) {
   const d = new Date(date);
@@ -48,7 +49,7 @@ export default function TrainingPanel() {
 
   const diasAcademia = semanaAtual.filter(r => r.treinoTipo === 'academia' || r.treinoTipo === 'ambos').length;
   const diasVolei = semanaAtual.filter(r => r.treinoTipo === 'volei' || r.treinoTipo === 'ambos').length;
-  const diasCaminhada = semanaAtual.filter(r => r.treinoTipo === 'caminhada/corrida').length;
+  const diasCaminhada = semanaAtual.filter(r => r.treinoTipo === 'caminhada/corrida' || (isRafa && r.treinoTipo === 'ambos')).length;
   const diasBike = semanaAtual.filter(r => r.treinoTipo === 'bike').length;
 
   const rendimentos = registros
@@ -72,31 +73,70 @@ export default function TrainingPanel() {
 
   const temRegistroTreino = registros.some(r => r.treinoTipo && r.treinoTipo !== 'nenhum');
 
-  const metaAcademia = isRafa ? 5 : 5;
-  const metaAtiv2 = isRafa ? 3 : 2;
+  const metaAcademia = isRafa ? 3 : 5;
+  const metaAtiv2 = isRafa ? 2 : 2;
   const label2 = isRafa ? 'Caminhada/Corrida' : 'Vôlei';
   const diasAtiv2 = isRafa ? diasCaminhada : diasVolei;
+
+  // Timeline dos últimos 7 dias — Rafa
+  const timeline7 = isRafa ? (() => {
+    const dias = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const reg = registros.find(r => r.data?.slice(0, 10) === dStr);
+      const tipo = reg?.treinoTipo ?? null;
+      dias.push({ dStr, tipo, diaSemana: ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.getDay()] });
+    }
+    return dias;
+  })() : [];
+
+  function iconeTreino(tipo) {
+    if (!tipo || tipo === 'nenhum') return <span style={{ fontSize: 10, color: '#2a2d3e' }}>●</span>;
+    const icons = { academia: '🏋️', 'caminhada/corrida': '🚶', bike: '🚲' };
+    if (tipo === 'ambos') return <span>🏋️🚶</span>;
+    return <span>{icons[tipo] ?? '●'}</span>;
+  }
 
   return (
     <div>
       <h2 className="section-title">Análise de treino</h2>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+      {isRafa && timeline7.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+            Últimos 7 dias
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            {timeline7.map(({ dStr, tipo, diaSemana }) => (
+              <div key={dStr} style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: 18, marginBottom: 4 }}>{iconeTreino(tipo)}</div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>{diaSemana}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: isRafa ? 'repeat(3, 1fr)' : 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
         <StatCard
-          label={`Academia esta semana`}
+          label="Academia esta semana"
           value={`${diasAcademia}/${metaAcademia}`}
+          sublabel={temRegistroTreino ? labelTreino(diasAcademia, metaAcademia) : null}
           ok={diasAcademia >= metaAcademia}
           semDados={!temRegistroTreino}
         />
         <StatCard
           label={`${label2} esta semana`}
           value={`${diasAtiv2}/${metaAtiv2}`}
+          sublabel={temRegistroTreino ? labelTreino(diasAtiv2, metaAtiv2) : null}
           ok={diasAtiv2 >= metaAtiv2}
           semDados={!temRegistroTreino}
         />
         <StatCard
           label="Rendimento médio"
-          value={rendMedio ? `${rendMedio}/5` : '—'}
+          value={rendMedio ? `${rendMedio}/5 ⭐` : '—'}
           ok={rendMedio !== null ? Number(rendMedio) >= 3.5 : null}
           semDados={rendMedio === null}
         />
@@ -132,15 +172,15 @@ export default function TrainingPanel() {
   );
 }
 
-function StatCard({ label, value, ok, semDados }) {
+function StatCard({ label, value, ok, semDados, sublabel }) {
   const cor = semDados ? '#64748b' : (ok ? '#10b981' : '#f59e0b');
   return (
     <div className="card" style={{ textAlign: 'center' }}>
       <div style={{ fontSize: 22, fontWeight: 700, color: cor }}>{value}</div>
       <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>{label}</div>
-      {!semDados && ok !== null && (
-        <div style={{ marginTop: 8, fontSize: 11, color: cor, fontWeight: 600 }}>
-          {ok ? 'Meta atingida ✓' : 'Abaixo da meta'}
+      {!semDados && sublabel && (
+        <div style={{ marginTop: 8, fontSize: 11, color: cor, fontWeight: 500 }}>
+          {sublabel}
         </div>
       )}
     </div>

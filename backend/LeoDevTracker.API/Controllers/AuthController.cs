@@ -19,7 +19,7 @@ namespace LeoDevTracker.API.Controllers
         public IActionResult Login(LoginRequest req)
         {
             var usuarios = _config.GetSection("Usuarios").Get<Dictionary<string, string>>() ?? [];
-            if (!usuarios.TryGetValue(req.Usuario, out var senhaCorreta) || senhaCorreta != req.Senha)
+            if (!usuarios.TryGetValue(req.Usuario, out var hashArmazenado) || !BCrypt.Net.BCrypt.Verify(req.Senha, hashArmazenado))
                 return Unauthorized(new { error = "Usuário ou senha inválidos." });
 
             var token = GerarToken(req.Usuario);
