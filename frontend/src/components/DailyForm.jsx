@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -151,14 +151,33 @@ export default function DailyForm({ onSuccess }) {
     gratidao: '',
     atendimentos: '',
     conteudoPostado: '',
+    cancelamentos: '',
+    motivoCancelamento: '',
+    lazer: '',
+    lazerIntensidade: null,
+    lazerObs: '',
   });
+
+  const [lazeresLista, setLazeresLista] = useState([]);
+  const [novoLazerInput, setNovoLazerInput] = useState('');
+  const [salvandoLazer, setSalvandoLazer] = useState(false);
+
+  const LAZERES_PADRAO = ['Crochê', 'Sudoku / Killer Sudoku', 'Leitura', 'Música', 'Puzzles e jogos de lógica', 'Stop / Scattergories'];
+  const MOTIVOS_CANCELAMENTO = ['Paciente cancelou', 'Paciente remarcou', 'Eu cancelei', 'Eu remarquei'];
+
+  useEffect(() => {
+    if (!isRafa) return;
+    api.listarLazeres()
+      .then(d => setLazeresLista(d ?? []))
+      .catch(() => {});
+  }, [isRafa]);
 
   const treinoOpcoes = isRafa
     ? ['academia', 'caminhada/corrida', 'bike', 'ambos', 'nenhum']
     : ['academia', 'volei', 'ambos', 'nenhum'];
 
   const sectionsDefault = isRafa
-    ? { saude: true, treino: false, reflexao: false }
+    ? { saude: true, lazer: false, treino: false, reflexao: false }
     : { estudos: true, trabalho: false, treino: false, reflexao: false };
 
   const [open, setOpen] = useState(sectionsDefault);
@@ -208,8 +227,27 @@ export default function DailyForm({ onSuccess }) {
     const preenchidos = [
       extras.qualidadeSono && `sono ${extras.qualidadeSono}/5`,
       extras.atendimentos && `${extras.atendimentos} atend.`,
+      extras.cancelamentos && `${extras.cancelamentos} cancel.`,
     ].filter(Boolean);
     return preenchidos.length > 0 ? preenchidos.join(' · ') : null;
+  }
+
+  function lazerHint() {
+    if (!extras.lazer) return null;
+    return extras.lazerIntensidade ? `${extras.lazer} · ${extras.lazerIntensidade}/5` : extras.lazer;
+  }
+
+  async function handleCadastrarLazer() {
+    const nome = novoLazerInput.trim();
+    if (!nome) return;
+    setSalvandoLazer(true);
+    try {
+      const novo = await api.criarLazer({ nome });
+      setLazeresLista(prev => [...prev, novo].sort((a, b) => a.nome.localeCompare(b.nome)));
+      setNovoLazerInput('');
+      setExtra('lazer', novo.nome);
+    } catch { }
+    finally { setSalvandoLazer(false); }
   }
 
   async function handleSubmit(e) {
@@ -222,12 +260,18 @@ export default function DailyForm({ onSuccess }) {
     setLoading(true);
 
     try {
+      const cancelNum = extras.cancelamentos ? parseInt(extras.cancelamentos, 10) : 0;
       const dadosExtras = isRafa
         ? JSON.stringify({
             qualidadeSono: extras.qualidadeSono ?? null,
             gratidao: extras.gratidao || null,
             atendimentos: extras.atendimentos ? parseInt(extras.atendimentos, 10) : 0,
             conteudoPostado: extras.conteudoPostado ? parseInt(extras.conteudoPostado, 10) : 0,
+            cancelamentos: cancelNum,
+            motivoCancelamento: cancelNum > 0 ? (extras.motivoCancelamento || null) : null,
+            lazer: extras.lazer || null,
+            lazerIntensidade: extras.lazer ? (extras.lazerIntensidade ?? null) : null,
+            lazerObs: extras.lazer ? (extras.lazerObs || null) : null,
           })
         : null;
 
@@ -339,24 +383,62 @@ export default function DailyForm({ onSuccess }) {
             </div>
           ) : null}
           {(humor === null || humor > 2) && (
-            <div className="grid-2">
+            <>
+              <div className="grid-2">
+                <div className="field">
+                  <label>Atendimentos realizados</label>
+                  <input
+                    type="number" min="0" max="20"
+                    value={extras.atendimentos}
+                    onChange={e => setExtra('atendimentos', e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label>Conteúdos postados</label>
+                  <input
+                    type="number" min="0" max="10"
+                    value={extras.conteudoPostado}
+                    onChange={e => setExtra('conteudoPostado', e.target.value)}
+                  />
+                </div>
+              </div>
+
               <div className="field">
-                <label>Atendimentos realizados</label>
+                <label>Cancelamentos do dia</label>
                 <input
-                  type="number" min="0"
-                  value={extras.atendimentos}
-                  onChange={e => setExtra('atendimentos', e.target.value)}
+                  type="number" min="0" max="10"
+                  value={extras.cancelamentos}
+                  onChange={e => setExtra('cancelamentos', e.target.value)}
                 />
               </div>
-              <div className="field">
-                <label>Conteúdos postados</label>
-                <input
-                  type="number" min="0"
-                  value={extras.conteudoPostado}
-                  onChange={e => setExtra('conteudoPostado', e.target.value)}
-                />
-              </div>
-            </div>
+
+              {parseInt(extras.cancelamentos, 10) > 0 && (
+                <div className="field">
+                  <label>Motivo do cancelamento</label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {MOTIVOS_CANCELAMENTO.map(m => {
+                      const sel = extras.motivoCancelamento === m;
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setExtra('motivoCancelamento', sel ? '' : m)}
+                          style={{
+                            padding: '6px 12px', borderRadius: 8, border: '1px solid',
+                            borderColor: sel ? 'var(--accent)' : '#2a2d3e',
+                            background: sel ? 'var(--accent-bg)' : 'transparent',
+                            color: sel ? '#d8b4fe' : '#94a3b8',
+                            cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                          }}
+                        >
+                          {m}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           <div className="field" style={{ marginBottom: 0 }}>
@@ -367,6 +449,81 @@ export default function DailyForm({ onSuccess }) {
               onChange={e => setExtra('gratidao', e.target.value)}
             />
           </div>
+        </Section>
+      )}
+
+      {/* Lazer — só Rafa */}
+      {isRafa && (
+        <Section
+          title="Lazer"
+          open={open.lazer}
+          onToggle={() => toggle('lazer')}
+          hint={lazerHint()}
+        >
+          <div className="field">
+            <label>Lazer do dia</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[...LAZERES_PADRAO, ...lazeresLista.map(l => l.nome).filter(n => !LAZERES_PADRAO.includes(n))].map(nome => {
+                const sel = extras.lazer === nome;
+                return (
+                  <button
+                    key={nome}
+                    type="button"
+                    onClick={() => setExtra('lazer', sel ? '' : nome)}
+                    style={{
+                      padding: '6px 12px', borderRadius: 8, border: '1px solid',
+                      borderColor: sel ? 'var(--accent)' : '#2a2d3e',
+                      background: sel ? 'var(--accent-bg)' : 'transparent',
+                      color: sel ? '#d8b4fe' : '#94a3b8',
+                      cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                    }}
+                  >
+                    {nome}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Cadastrar novo lazer</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                placeholder="Nome do lazer..."
+                value={novoLazerInput}
+                onChange={e => setNovoLazerInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleCadastrarLazer())}
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleCadastrarLazer}
+                disabled={salvandoLazer || !novoLazerInput.trim()}
+                style={{ fontSize: 13, whiteSpace: 'nowrap' }}
+              >
+                {salvandoLazer ? '...' : '+ Salvar'}
+              </button>
+            </div>
+          </div>
+
+          {extras.lazer && (
+            <>
+              <div className="field">
+                <label>Intensidade / foco</label>
+                <RatingBtns value={extras.lazerIntensidade} onChange={v => setExtra('lazerIntensidade', v)} />
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Observação (opcional)</label>
+                <textarea
+                  placeholder="Como foi? Algo que queira lembrar..."
+                  value={extras.lazerObs}
+                  onChange={e => setExtra('lazerObs', e.target.value)}
+                />
+              </div>
+            </>
+          )}
         </Section>
       )}
 
@@ -413,7 +570,7 @@ export default function DailyForm({ onSuccess }) {
             <div className="field">
               <label>Tickets trabalhados</label>
               <input
-                type="number" min="0"
+                type="number" min="0" max="50"
                 placeholder="ex: 3"
                 value={ticketsTrabalhados}
                 onChange={e => setTicketsTrabalhados(e.target.value)}

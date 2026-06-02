@@ -12,15 +12,32 @@ namespace LeoDevTracker.API.Controllers
     public class AuthController : ControllerBase
     {
         private readonly IConfiguration _config;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(IConfiguration config) => _config = config;
+        public AuthController(IConfiguration config, ILogger<AuthController> logger)
+        {
+            _config = config;
+            _logger = logger;
+        }
 
         [HttpPost("login")]
         public IActionResult Login(LoginRequest req)
         {
             var usuarios = _config.GetSection("Usuarios").Get<Dictionary<string, string>>() ?? [];
             if (!usuarios.TryGetValue(req.Usuario, out var hashArmazenado) || !BCrypt.Net.BCrypt.Verify(req.Senha, hashArmazenado))
+            {
+                var ip = Request.Headers["X-Forwarded-For"].FirstOrDefault()
+                      ?? Request.Headers["X-Real-IP"].FirstOrDefault()
+                      ?? HttpContext.Connection.RemoteIpAddress?.ToString()
+                      ?? "desconhecido";
+                ip = ip.Split(',')[0].Trim();
+
+                _logger.LogWarning(
+                    "Login falhou para usuário '{Username}' — IP: {Ip} — {Timestamp}",
+                    req.Usuario, ip, DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") + " UTC");
+
                 return Unauthorized(new { error = "Usuário ou senha inválidos." });
+            }
 
             var token = GerarToken(req.Usuario);
             return Ok(token);

@@ -12,6 +12,8 @@ namespace LeoDevTracker.API.Data
         public DbSet<MetaFinanceira> MetasFinanceiras => Set<MetaFinanceira>();
         public DbSet<AnaliseSemanal> AnalisesSemanais => Set<AnaliseSemanal>();
         public DbSet<RotinaSlot> RotinaSlots => Set<RotinaSlot>();
+        public DbSet<Lazer> Lazeres => Set<Lazer>();
+        public DbSet<RotinaCheckin> RotinaCheckins => Set<RotinaCheckin>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -48,7 +50,25 @@ namespace LeoDevTracker.API.Data
             {
                 e.ToTable("rotina_slots");
                 e.Property(s => s.CriadoEm).HasDefaultValueSql("NOW()");
+                e.Property(s => s.IsRecorrente).HasDefaultValue(false);
+                e.Property(s => s.DiasRecorrentes).HasColumnType("integer[]");
                 e.HasIndex(s => new { s.Usuario, s.DiaSemana });
+            });
+
+            modelBuilder.Entity<Lazer>(e =>
+            {
+                e.ToTable("lazeres");
+                e.Property(l => l.CriadoEm).HasDefaultValueSql("NOW()");
+                e.Property(l => l.Usuario).HasDefaultValue("rafa").HasMaxLength(100);
+                e.HasIndex(l => new { l.Usuario, l.Nome }).IsUnique();
+            });
+
+            modelBuilder.Entity<RotinaCheckin>(e =>
+            {
+                e.ToTable("rotina_checkins");
+                e.Property(c => c.CriadoEm).HasDefaultValueSql("NOW()");
+                e.Property(c => c.Usuario).HasMaxLength(100);
+                e.HasIndex(c => new { c.SlotId, c.Usuario, c.Semana }).IsUnique();
             });
         }
     }

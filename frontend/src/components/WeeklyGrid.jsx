@@ -1,5 +1,13 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
+
+function getMondayISO(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const PERIODOS = ['manha', 'tarde', 'noite'];
@@ -22,10 +30,12 @@ function diaSemanaHoje() {
 
 export default function WeeklyGrid() {
   const [slots, setSlots] = useState([]);
+  const [checkins, setCheckins] = useState({}); // slotId → status
   const [loading, setLoading] = useState(true);
   const [selecionado, setSelecionado] = useState(null); // { dia, periodo }
   const [abaMobile, setAbaMobile] = useState(diaSemanaHoje());
   const [isMobile, setIsMobile] = useState(window.innerWidth < 600);
+  const semanaAtual = getMondayISO();
 
   // painel de edição
   const [modo, setModo] = useState('ver'); // 'ver' | 'novo' | 'editar'
@@ -34,17 +44,50 @@ export default function WeeklyGrid() {
   const [categoria, setCategoria] = useState('estudo');
   const [horaInicio, setHoraInicio] = useState('');
   const [horaFim, setHoraFim] = useState('');
+  const [isRecorrente, setIsRecorrente] = useState(false);
+  const [diasRecorrentes, setDiasRecorrentes] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [erroSalvar, setErroSalvar] = useState('');
+
+  // escolha para slots virtuais (recorrentes)
+  const [recorrenteChoice, setRecorrenteChoice] = useState(null);
 
   const painelRef = useRef(null);
 
   useEffect(() => {
-    api.listarRotina()
-      .then(d => setSlots(d ?? []))
+    Promise.all([
+      api.listarRotina(),
+      api.getCheckins(semanaAtual),
+    ])
+      .then(([s, cs]) => {
+        setSlots(s ?? []);
+        const map = {};
+        (cs ?? []).forEach(c => { map[c.slotId] = c.status; });
+        setCheckins(map);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [semanaAtual]);
+
+  // slotId efetivo para checkin: virtual slots usam o id do original
+  function effectiveCheckinId(slot) {
+    return slot.recorrenteOriginalId ?? slot.id;
+  }
+
+  const toggleCheckin = useCallback(async (slot, statusAtual) => {
+    const effectiveId = slot.recorrenteOriginalId ?? slot.id;
+    let novoStatus;
+    if (statusAtual === 'feito') novoStatus = 'nao_feito';
+    else if (statusAtual === 'nao_feito') novoStatus = null;
+    else novoStatus = 'feito';
+
+    setCheckins(prev => ({ ...prev, [effectiveId]: novoStatus }));
+    try {
+      await api.upsertCheckin(effectiveId, { semana: semanaAtual, status: novoStatus ?? '' });
+    } catch {
+      setCheckins(prev => ({ ...prev, [effectiveId]: statusAtual }));
+    }
+  }, [semanaAtual]);
 
   useEffect(() => {
     function handleResize() { setIsMobile(window.innerWidth < 600); }
@@ -58,6 +101,7 @@ export default function WeeklyGrid() {
       if (painelRef.current && !painelRef.current.contains(e.target)) {
         setSelecionado(null);
         setModo('ver');
+        setRecorrenteChoice(null);
       }
     }
     document.addEventListener('mousedown', handleClick);
@@ -68,35 +112,78 @@ export default function WeeklyGrid() {
     return slots.filter(s => s.diaSemana === dia && s.periodo === periodo);
   }
 
+  function resetForm() {
+    setLabel('');
+    setCategoria('estudo');
+    setHoraInicio('');
+    setHoraFim('');
+    setIsRecorrente(false);
+    setDiasRecorrentes([]);
+    setErroSalvar('');
+    setRecorrenteChoice(null);
+  }
+
   function abrirCelula(dia, periodo) {
     setSelecionado({ dia, periodo });
     setModo('ver');
     setSlotEditando(null);
-    setLabel('');
-    setCategoria('estudo');
-    setHoraInicio('');
-    setHoraFim('');
-    setErroSalvar('');
+    resetForm();
   }
 
   function iniciarNovo() {
     setSlotEditando(null);
-    setLabel('');
-    setCategoria('estudo');
-    setHoraInicio('');
-    setHoraFim('');
-    setErroSalvar('');
+    resetForm();
     setModo('novo');
   }
 
   function iniciarEditar(slot) {
+    if (slot.isVirtual) {
+      setRecorrenteChoice(slot);
+      setModo('ver');
+      return;
+    }
     setSlotEditando(slot);
     setLabel(slot.label);
     setCategoria(slot.categoria);
     setHoraInicio(slot.horaInicio ?? '');
     setHoraFim(slot.horaFim ?? '');
+    setIsRecorrente(slot.isRecorrente ?? false);
+    setDiasRecorrentes(slot.diasRecorrentes ?? []);
     setErroSalvar('');
+    setRecorrenteChoice(null);
     setModo('editar');
+  }
+
+  function escolherSoEste() {
+    if (!recorrenteChoice || !selecionado) return;
+    setSlotEditando(null);
+    setLabel(recorrenteChoice.label);
+    setCategoria(recorrenteChoice.categoria);
+    setHoraInicio(recorrenteChoice.horaInicio ?? '');
+    setHoraFim(recorrenteChoice.horaFim ?? '');
+    setIsRecorrente(false);
+    setDiasRecorrentes([]);
+    setErroSalvar('');
+    setRecorrenteChoice(null);
+    setModo('novo');
+  }
+
+  function escolherTodosRecorrentes() {
+    if (!recorrenteChoice) return;
+    const original = slots.find(s => s.id === recorrenteChoice.recorrenteOriginalId);
+    if (original) {
+      setSelecionado({ dia: original.diaSemana, periodo: original.periodo });
+      setSlotEditando(original);
+      setLabel(original.label);
+      setCategoria(original.categoria);
+      setHoraInicio(original.horaInicio ?? '');
+      setHoraFim(original.horaFim ?? '');
+      setIsRecorrente(original.isRecorrente ?? false);
+      setDiasRecorrentes(original.diasRecorrentes ?? []);
+      setErroSalvar('');
+      setRecorrenteChoice(null);
+      setModo('editar');
+    }
   }
 
   async function salvar() {
@@ -109,6 +196,8 @@ export default function WeeklyGrid() {
       categoria,
       horaInicio: horaInicio || null,
       horaFim: horaFim || null,
+      isRecorrente,
+      diasRecorrentes: isRecorrente ? diasRecorrentes : [],
     };
     try {
       if (modo === 'novo') {
@@ -144,7 +233,7 @@ export default function WeeklyGrid() {
             <button
               key={i}
               type="button"
-              onClick={() => { setAbaMobile(i); setSelecionado(null); }}
+              onClick={() => { setAbaMobile(i); setSelecionado(null); setRecorrenteChoice(null); }}
               style={{
                 flex: '0 0 auto', padding: '10px 14px',
                 background: 'none', border: 'none', cursor: 'pointer',
@@ -173,7 +262,13 @@ export default function WeeklyGrid() {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {slotsEm(abaMobile, p).map(s => (
-                  <SlotChip key={s.id} slot={s} onEdit={() => { abrirCelula(abaMobile, p); iniciarEditar(s); }} onDelete={() => deletar(s.id)} />
+                  <SlotChip
+                    key={`${s.id}-${s.diaSemana}`}
+                    slot={s}
+                    checkinStatus={checkins[effectiveCheckinId(s)]}
+                    onEdit={() => { abrirCelula(abaMobile, p); iniciarEditar(s); }}
+                    onDelete={s.isVirtual ? undefined : () => deletar(s.id)}
+                  />
                 ))}
                 <button
                   type="button"
@@ -194,12 +289,21 @@ export default function WeeklyGrid() {
               categoria={categoria} setCategoria={setCategoria}
               horaInicio={horaInicio} setHoraInicio={setHoraInicio}
               horaFim={horaFim} setHoraFim={setHoraFim}
+              isRecorrente={isRecorrente} setIsRecorrente={setIsRecorrente}
+              diasRecorrentes={diasRecorrentes} setDiasRecorrentes={setDiasRecorrentes}
               salvando={salvando} onSalvar={salvar} erro={erroSalvar}
-              onCancelar={() => { setModo('ver'); setSelecionado(null); }}
+              onCancelar={() => { setModo('ver'); setSelecionado(null); setRecorrenteChoice(null); }}
               onNovo={iniciarNovo}
               slotsCell={slotsEm(selecionado.dia, selecionado.periodo)}
               onEditarSlot={iniciarEditar}
               onDeletarSlot={deletar}
+              checkins={checkins}
+              onToggleCheckin={toggleCheckin}
+              effectiveCheckinId={effectiveCheckinId}
+              recorrenteChoice={recorrenteChoice}
+              onEscolherSoEste={escolherSoEste}
+              onEscolherTodos={escolherTodosRecorrentes}
+              onCancelarChoice={() => setRecorrenteChoice(null)}
             />
           </div>
         )}
@@ -261,7 +365,12 @@ export default function WeeklyGrid() {
                   }}
                 >
                   {celSlots.map(s => (
-                    <SlotChip key={s.id} slot={s} compact />
+                    <SlotChip
+                      key={`${s.id}-${s.diaSemana}`}
+                      slot={s}
+                      compact
+                      checkinStatus={checkins[effectiveCheckinId(s)]}
+                    />
                   ))}
                   {celSlots.length === 0 && (
                     <span style={{ fontSize: 10, color: '#2a2d3e', margin: 'auto' }}>+</span>
@@ -284,12 +393,21 @@ export default function WeeklyGrid() {
             categoria={categoria} setCategoria={setCategoria}
             horaInicio={horaInicio} setHoraInicio={setHoraInicio}
             horaFim={horaFim} setHoraFim={setHoraFim}
+            isRecorrente={isRecorrente} setIsRecorrente={setIsRecorrente}
+            diasRecorrentes={diasRecorrentes} setDiasRecorrentes={setDiasRecorrentes}
             salvando={salvando} onSalvar={salvar} erro={erroSalvar}
-            onCancelar={() => { setModo('ver'); setSelecionado(null); }}
+            onCancelar={() => { setModo('ver'); setSelecionado(null); setRecorrenteChoice(null); }}
             onNovo={iniciarNovo}
             slotsCell={slotsEm(selecionado.dia, selecionado.periodo)}
             onEditarSlot={iniciarEditar}
             onDeletarSlot={deletar}
+            checkins={checkins}
+            onToggleCheckin={toggleCheckin}
+            effectiveCheckinId={effectiveCheckinId}
+            recorrenteChoice={recorrenteChoice}
+            onEscolherSoEste={escolherSoEste}
+            onEscolherTodos={escolherTodosRecorrentes}
+            onCancelarChoice={() => setRecorrenteChoice(null)}
           />
         </div>
       )}
@@ -299,39 +417,84 @@ export default function WeeklyGrid() {
   );
 }
 
-function SlotChip({ slot, compact, onEdit, onDelete }) {
+const STATUS_COR = { feito: '#22c55e', nao_feito: '#ef4444' };
+const STATUS_LABEL = { feito: '✓', nao_feito: '✗' };
+
+function SlotChip({ slot, compact, checkinStatus, onEdit, onDelete, onToggleCheckin }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const cor = COR_CAT[slot.categoria] ?? '#6366f1';
+  const isRec = slot.isVirtual || slot.isRecorrente;
+
+  const borderStyle = slot.isVirtual
+    ? `1.5px dashed ${cor}80`
+    : slot.isRecorrente
+      ? `1px dashed ${cor}60`
+      : `1px solid ${cor}50`;
+
   if (compact) {
     return (
       <div style={{
-        background: `${cor}20`, border: `1px solid ${cor}50`,
+        background: `${cor}20`,
+        border: borderStyle,
         borderRadius: 4, padding: '2px 6px', fontSize: 10, color: cor,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        display: 'flex', alignItems: 'center', gap: 3,
       }}>
+        {checkinStatus && (
+          <span style={{ color: STATUS_COR[checkinStatus], fontWeight: 700, fontSize: 9 }}>
+            {STATUS_LABEL[checkinStatus]}
+          </span>
+        )}
+        {isRec && <span style={{ fontSize: 9, opacity: 0.7 }}>↻</span>}
         {slot.label}
       </div>
     );
   }
+
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      background: `${cor}15`, border: `1px solid ${cor}40`,
-      borderRadius: 6, padding: '6px 10px', gap: 8,
+      background: `${cor}15`,
+      border: borderStyle,
+      borderRadius: 6, padding: '6px 10px', gap: 8, marginBottom: 6,
     }}>
-      <div>
-        <span style={{ fontSize: 13, color: cor, fontWeight: 500 }}>{slot.label}</span>
-        {(slot.horaInicio || slot.horaFim) && (
-          <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>
-            {slot.horaInicio}{slot.horaFim ? `–${slot.horaFim}` : ''}
-          </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {isRec && (
+          <span style={{ fontSize: 11, color: cor, opacity: 0.7 }} title={slot.isVirtual ? 'Cópia recorrente' : 'Slot recorrente'}>↻</span>
         )}
+        <div>
+          <span style={{ fontSize: 13, color: cor, fontWeight: 500 }}>{slot.label}</span>
+          {(slot.horaInicio || slot.horaFim) && (
+            <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>
+              {slot.horaInicio}{slot.horaFim ? `–${slot.horaFim}` : ''}
+            </span>
+          )}
+          {slot.isVirtual && (
+            <span style={{ fontSize: 10, color: '#64748b', marginLeft: 6 }}>recorrente</span>
+          )}
+        </div>
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {onToggleCheckin && (
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onToggleCheckin(slot, checkinStatus); }}
+            title={checkinStatus === 'feito' ? 'Marcar como não feito' : checkinStatus === 'nao_feito' ? 'Limpar marcação' : 'Marcar como feito'}
+            style={{
+              fontSize: 13, fontWeight: 700,
+              color: checkinStatus ? STATUS_COR[checkinStatus] : '#475569',
+              background: checkinStatus ? `${STATUS_COR[checkinStatus]}15` : 'transparent',
+              border: `1px solid ${checkinStatus ? STATUS_COR[checkinStatus] + '50' : '#2a2d3e'}`,
+              borderRadius: 6, cursor: 'pointer', padding: '2px 8px', minWidth: 28,
+            }}
+          >
+            {checkinStatus ? STATUS_LABEL[checkinStatus] : '○'}
+          </button>
+        )}
         {onEdit && !confirmDelete && (
           <button type="button" onClick={e => { e.stopPropagation(); onEdit(slot); }}
             style={{ fontSize: 11, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-            Editar
+            {slot.isVirtual ? 'Editar...' : 'Editar'}
           </button>
         )}
         {onDelete && !confirmDelete && (
@@ -360,9 +523,42 @@ function SlotChip({ slot, compact, onEdit, onDelete }) {
 function PainelEdicao({
   modo, label, setLabel, categoria, setCategoria,
   horaInicio, setHoraInicio, horaFim, setHoraFim,
+  isRecorrente, setIsRecorrente, diasRecorrentes, setDiasRecorrentes,
   salvando, onSalvar, onCancelar, onNovo, erro,
   slotsCell, onEditarSlot, onDeletarSlot,
+  checkins, onToggleCheckin, effectiveCheckinId,
+  recorrenteChoice, onEscolherSoEste, onEscolherTodos, onCancelarChoice,
 }) {
+  // Diálogo de escolha para slots virtuais
+  if (recorrenteChoice) {
+    return (
+      <div>
+        <div style={{
+          background: '#6366f115', border: '1px solid #6366f130',
+          borderRadius: 8, padding: '12px 14px', marginBottom: 14,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#a5b4fc', marginBottom: 4 }}>
+            ↻ &nbsp;{recorrenteChoice.label}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b' }}>
+            Este slot repete toda semana. O que deseja fazer?
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className="btn btn-primary" style={{ fontSize: 13 }} onClick={onEscolherSoEste}>
+            Editar só este dia
+          </button>
+          <button type="button" className="btn btn-secondary" style={{ fontSize: 13 }} onClick={onEscolherTodos}>
+            Editar todos os recorrentes
+          </button>
+          <button type="button" className="btn btn-secondary" style={{ fontSize: 13, color: '#64748b' }} onClick={onCancelarChoice}>
+            Cancelar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (modo === 'ver') {
     return (
       <div>
@@ -370,7 +566,14 @@ function PainelEdicao({
           <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>Nenhum slot neste período.</p>
         )}
         {slotsCell.map(s => (
-          <SlotChip key={s.id} slot={s} onEdit={onEditarSlot} onDelete={onDeletarSlot} />
+          <SlotChip
+            key={`${s.id}-${s.diaSemana}`}
+            slot={s}
+            checkinStatus={checkins?.[effectiveCheckinId(s)]}
+            onEdit={onEditarSlot}
+            onDelete={s.isVirtual ? undefined : onDeletarSlot}
+            onToggleCheckin={onToggleCheckin}
+          />
         ))}
         <button type="button" className="btn btn-secondary" style={{ marginTop: 10, fontSize: 13 }} onClick={onNovo}>
           + Novo slot
@@ -379,11 +582,26 @@ function PainelEdicao({
     );
   }
 
+  function toggleDia(i) {
+    setDiasRecorrentes(prev =>
+      prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]
+    );
+  }
+
   return (
     <div>
-      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: isRecorrente && modo === 'editar' ? 6 : 14 }}>
         {modo === 'novo' ? 'Novo slot' : 'Editar slot'}
       </div>
+      {isRecorrente && modo === 'editar' && (
+        <div style={{
+          fontSize: 11, color: '#6366f1', background: '#6366f110',
+          border: '1px solid #6366f130', borderRadius: 6,
+          padding: '5px 10px', marginBottom: 12,
+        }}>
+          ↻ Editando template recorrente — alterações afetam todos os dias em que aparece
+        </div>
+      )}
       <div className="grid-2" style={{ marginBottom: 0 }}>
         <div className="field">
           <label>Descrição</label>
@@ -426,11 +644,64 @@ function PainelEdicao({
           <input type="time" value={horaFim} onChange={e => setHoraFim(e.target.value)} />
         </div>
       </div>
+
+      {/* Recorrência */}
+      <div className="field" style={{ marginTop: 4 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+          <input
+            type="checkbox"
+            checked={isRecorrente}
+            onChange={e => {
+              setIsRecorrente(e.target.checked);
+              if (!e.target.checked) setDiasRecorrentes([]);
+            }}
+            style={{ width: 14, height: 14, cursor: 'pointer' }}
+          />
+          <span style={{ fontSize: 13 }}>↻ Repetir toda semana</span>
+        </label>
+
+        {isRecorrente && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>
+              Marque os dias em que este slot deve aparecer:
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {DIAS.map((d, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => toggleDia(i)}
+                  style={{
+                    padding: '5px 10px', borderRadius: 6, border: '1px solid',
+                    borderColor: diasRecorrentes.includes(i) ? 'var(--accent)' : '#2a2d3e',
+                    background: diasRecorrentes.includes(i) ? 'var(--accent-bg)' : 'transparent',
+                    color: diasRecorrentes.includes(i) ? 'var(--accent)' : '#64748b',
+                    cursor: 'pointer', fontSize: 12, fontWeight: diasRecorrentes.includes(i) ? 600 : 400,
+                  }}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+            {diasRecorrentes.length === 0 && (
+              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>
+                Selecione ao menos um dia para a recorrência.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {erro && (
         <p style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{erro}</p>
       )}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" className="btn btn-primary" onClick={onSalvar} disabled={salvando || !label.trim()}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={onSalvar}
+          disabled={salvando || !label.trim() || (isRecorrente && diasRecorrentes.length === 0)}
+        >
           {salvando ? 'Salvando...' : 'Salvar'}
         </button>
         <button type="button" className="btn btn-secondary" onClick={onCancelar}>Cancelar</button>

@@ -3,6 +3,7 @@ using System;
 using LeoDevTracker.API.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace LeoDevTracker.API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260527230840_AddLazerAndRotinaCheckin")]
+    partial class AddLazerAndRotinaCheckin
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -300,9 +303,6 @@ namespace LeoDevTracker.API.Migrations
                     b.Property<int>("DiaSemana")
                         .HasColumnType("integer");
 
-                    b.Property<int[]>("DiasRecorrentes")
-                        .HasColumnType("integer[]");
-
                     b.Property<string>("HoraFim")
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)");
@@ -310,11 +310,6 @@ namespace LeoDevTracker.API.Migrations
                     b.Property<string>("HoraInicio")
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)");
-
-                    b.Property<bool>("IsRecorrente")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
 
                     b.Property<string>("Label")
                         .IsRequired()

@@ -51,6 +51,20 @@ export default function History() {
   const [erro, setErro] = useState('');
   const [erroDelete, setErroDelete] = useState('');
   const [confirmando, setConfirmando] = useState(null);
+  const [exportando, setExportando] = useState(false);
+  const [erroExport, setErroExport] = useState('');
+
+  async function handleExportarPdf() {
+    setExportando(true);
+    setErroExport('');
+    try {
+      await api.exportarPdf();
+    } catch {
+      setErroExport('Erro ao gerar PDF. Tente novamente.');
+    } finally {
+      setExportando(false);
+    }
+  }
 
   useEffect(() => {
     api.listarRegistros()
@@ -83,8 +97,30 @@ export default function History() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700 }}>Histórico</h1>
-        <span className="muted">{registros.length} registros</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span className="muted">{registros.length} registros</span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ fontSize: 12, padding: '5px 12px' }}
+            onClick={handleExportarPdf}
+            disabled={exportando}
+            title="Baixar PDF com os últimos 7 dias"
+          >
+            {exportando ? 'Gerando PDF...' : 'Exportar PDF (7 dias)'}
+          </button>
+        </div>
       </div>
+
+      {erroExport && (
+        <div style={{
+          background: '#ef444420', border: '1px solid #ef444440',
+          borderRadius: 8, padding: '10px 14px', marginBottom: 16,
+          color: '#fca5a5', fontSize: 13,
+        }}>
+          {erroExport}
+        </div>
+      )}
 
       {erroDelete && (
         <div style={{

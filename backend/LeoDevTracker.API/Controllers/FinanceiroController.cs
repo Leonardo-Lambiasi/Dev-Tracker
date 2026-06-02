@@ -4,6 +4,7 @@ using LeoDevTracker.API.Models;
 using LeoDevTracker.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 
@@ -83,60 +84,68 @@ namespace LeoDevTracker.API.Controllers
                 ? "Rafa, 30 anos, psicóloga autônoma no Brasil"
                 : "Leo, 26 anos, desenvolvedor em São Paulo no Brasil";
 
-            var prompt = $$"""
-                Você é um assistente financeiro pessoal de {{contexto}}.
-                Analise o extrato bancário abaixo e retorne APENAS um objeto JSON válido, sem markdown, sem texto adicional.
+            var metas = await _db.MetasFinanceiras
+                .Where(m => m.Usuario == usuario)
+                .ToListAsync();
 
-                REGRAS CRÍTICAS PARA CLASSIFICAR ENTRADAS E SAÍDAS:
-                - "entradas" = SOMENTE valores recebidos/creditados (salário, PIX recebido, depósito, transferência recebida)
-                - "saidas" = SOMENTE valores gastos/debitados (compras, pagamentos, PIX enviado, débito automático)
-                - NUNCA inclua uma entrada nas saídas, nem uma saída nas entradas
-                - Valores com "-", "débito", "debit", "pagamento", "compra" = saída
-                - Valores com "+", "crédito", "credit", "recebido", "salário", "depósito" = entrada
-                - "saldo" = entradas - saidas (pode ser negativo)
-                - Todas as chaves numéricas devem ser positivas (use valor absoluto)
+            var metasBloco = metas.Count > 0
+                ? "METAS FINANCEIRAS DO USUARIO:\n" + string.Join("\n", metas.Select(m =>
+                {
+                    var prog = m.ValorMeta > 0 ? (double)m.ValorAtual / (double)m.ValorMeta * 100 : 0;
+                    return $"- {m.Descricao}: atual R$ {m.ValorAtual:F2} / meta R$ {m.ValorMeta:F2} ({prog:F0}%)" +
+                           (m.Prazo.HasValue ? $" — prazo {m.Prazo:dd/MM/yyyy}" : "");
+                }))
+                : "";
+
+            var prompt = $$"""
+                Voce e um assistente financeiro pessoal de {{contexto}}.
+                Analise o extrato bancario abaixo e retorne APENAS um objeto JSON valido, sem markdown, sem texto adicional.
+
+                REGRAS CRITICAS:
+                - "categorias" e "maiores_gastos": use apenas saidas/debitos
+                - Valores com "-", "debito", "pagamento", "compra" = saida
+                - Valores com "+", "credito", "recebido", "salario", "deposito" = entrada
+                - Todas as chaves numericas devem ser positivas (valor absoluto)
+
+                {{metasBloco}}
 
                 EXTRATO:
                 {{extrato}}
 
-                Retorne exatamente neste formato JSON (sem comentários, sem texto fora do JSON):
+                Retorne EXATAMENTE neste formato JSON (sem comentarios, sem texto fora do JSON):
                 {
-                  "resumo": { "entradas": 0.00, "saidas": 0.00, "saldo": 0.00 },
+                  "resumo": "Sintese em 1-2 frases: entradas vs saidas, saldo e situacao geral",
                   "categorias": [
-                    { "nome": "Alimentação", "valor": 0.00, "percentual": 0.0 },
-                    { "nome": "Transporte", "valor": 0.00, "percentual": 0.0 },
-                    { "nome": "Assinatura", "valor": 0.00, "percentual": 0.0 },
-                    { "nome": "Lazer", "valor": 0.00, "percentual": 0.0 },
-                    { "nome": "Moradia", "valor": 0.00, "percentual": 0.0 },
-                    { "nome": "Outros", "valor": 0.00, "percentual": 0.0 }
+                    { "nome": "Alimentacao", "valor": 0.00, "percentual": 0.0 }
                   ],
-                  "maioresGastos": [
-                    { "descricao": "Nome do gasto", "valor": 0.00, "data": "DD/MM" },
-                    { "descricao": "Nome do gasto", "valor": 0.00, "data": "DD/MM" },
-                    { "descricao": "Nome do gasto", "valor": 0.00, "data": "DD/MM" }
+                  "maiores_gastos": [
+                    { "descricao": "Nome do gasto", "valor": 0.00 }
                   ],
-                  "padrao": "Padrão de consumo em português (1-2 frases).",
-                  "recomendacao": "Recomendação prática em português (1-2 frases).",
-                  "dicas": [
-                    { "titulo": "Título curto da dica", "texto": "Explicação prática e específica baseada nos dados do extrato.", "prioridade": "alta" },
-                    { "titulo": "Título curto da dica", "texto": "Explicação prática e específica baseada nos dados do extrato.", "prioridade": "media" },
-                    { "titulo": "Título curto da dica", "texto": "Explicação prática e específica baseada nos dados do extrato.", "prioridade": "baixa" }
+                  "padrao": "Padrao de consumo identificado (1-2 frases).",
+                  "recomendacao": "Recomendacao principal pratica (1-2 frases).",
+                  "projecao": "No ritmo atual, fecha o mes com R$ X de sobra/deficit",
+                  "acoes_concretas": [
+                    "Acao especifica 1 com valor real do extrato",
+                    "Acao especifica 2",
+                    "Acao especifica 3"
+                  ],
+                  "alertas": [
+                    "Gasto recorrente oculto ou assinatura esquecida",
+                    "Padrao de impulso identificado"
+                  ],
+                  "metas_impacto": [
+                    { "meta": "Nome da meta", "observacao": "Como esse extrato impacta essa meta" }
                   ]
                 }
 
-                REGRAS PARA AS DICAS:
-                - Gere entre 2 e 4 dicas baseadas estritamente nos dados do extrato — não invente gastos que não existem
-                - "prioridade": "alta" = problema real e urgente (saldo negativo, gasto excessivo em categoria específica)
-                - "prioridade": "media" = oportunidade de melhoria clara
-                - "prioridade": "baixa" = sugestão de longo prazo (investimento, reserva de emergência)
-                - Se o saldo for positivo e sobrar dinheiro, dê uma dica sobre onde aplicar (reserva, investimento)
-                - Se houver muitas assinaturas, sugira revisar quais realmente usa
-                - Se alimentação/lazer passar de 30% das saídas, alerte com dica de prioridade alta
-                - Se as entradas forem irregulares (autônomo), sugira reserva de 3-6 meses de despesas fixas
-                - Seja específico: mencione valores e categorias reais do extrato nas dicas
-                - Tom: direto, sem julgamento, como um amigo que entende de finanças
-
-                Inclua apenas categorias com valor > 0. percentual = (valor / saidas) * 100. Use ponto para decimais. Retorne SOMENTE o JSON.
+                REGRAS:
+                - "resumo": string descritiva, nao objeto
+                - "maiores_gastos": top 5 maiores saidas individuais
+                - "acoes_concretas": exatamente 3 cortes ou realocacoes especificas com valores reais
+                - "alertas": gastos recorrentes, assinaturas que podem ter passado despercebidas, padroes de impulso — deixe vazio [] se nao houver
+                - "metas_impacto": cruzamento com as metas financeiras do usuario — so inclua se houver metas cadastradas; caso contrario use []
+                - percentual = (valor / total_saidas) * 100. Inclua apenas categorias com valor > 0
+                - Use ponto para decimais. Retorne SOMENTE o JSON.
                 """;
 
             try

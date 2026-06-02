@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   LineChart, Line, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -51,6 +51,7 @@ export default function Dashboard() {
   const [resumo, setResumo] = useState(null);
   const [semana, setSemana] = useState([]);
   const [historico, setHistorico] = useState([]);
+  const [aderenciaData, setAderenciaData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -78,11 +79,13 @@ export default function Dashboard() {
     const inicio28 = new Date();
     inicio28.setDate(inicio28.getDate() - 28);
 
-    Promise.all([
+    const promises = [
       api.getResumo(),
       api.getSemana(),
       api.listarRegistros({ inicio: inicio28.toISOString() }),
-    ])
+    ];
+
+    Promise.all(promises)
       .then(([r, s, h]) => {
         setResumo(r);
         setSemana(s ?? []);
@@ -90,6 +93,10 @@ export default function Dashboard() {
       })
       .catch(() => setErro('Não foi possível carregar os dados. Tente recarregar a página.'))
       .finally(() => setLoading(false));
+
+    if (isRafa) {
+      api.getAderencia(4).then(d => setAderenciaData(d ?? [])).catch(() => {});
+    }
   }, []);
 
   if (loading) {
@@ -122,6 +129,39 @@ export default function Dashboard() {
   // Métricas Rafa — bem-estar
   const totalAtend = semana.reduce((acc, r) => acc + extrasInt(r, 'atendimentos'), 0);
   const totalConteudo = semana.reduce((acc, r) => acc + extrasInt(r, 'conteudoPostado'), 0);
+  const totalCancelamentos = semana.reduce((acc, r) => acc + extrasInt(r, 'cancelamentos'), 0);
+
+  // Lazer — dados do historico (28 dias) agrupados por semana
+  const LAZER_CORES = ['#9333ea', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#84cc16', '#f472b6'];
+  function getMondayLabel(dateStr) {
+    const d = new Date(dateStr);
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const mon = new Date(d);
+    mon.setDate(d.getDate() + diff);
+    return mon.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  }
+  const lazerPorSemana = {};
+  const lazeresSemanaAtual = new Set();
+  historico.forEach(r => {
+    const lazer = extrasStr(r, 'lazer');
+    const intensidade = extrasInt(r, 'lazerIntensidade');
+    if (!lazer) return;
+    const sem = getMondayLabel(r.data);
+    if (!lazerPorSemana[sem]) lazerPorSemana[sem] = { semana: sem };
+    lazerPorSemana[sem][lazer] = (lazerPorSemana[sem][lazer] || 0) + (intensidade || 1);
+  });
+  semana.forEach(r => { const l = extrasStr(r, 'lazer'); if (l) lazeresSemanaAtual.add(l); });
+  const lazerData = Object.values(lazerPorSemana).slice(-4);
+  const lazeresTodos = [...new Set(historico.map(r => extrasStr(r, 'lazer')).filter(Boolean))];
+  const diasComLazer = semana.filter(r => extrasStr(r, 'lazer')).length;
+
+  // Aderência
+  const aderenciaAtual = aderenciaData.length > 0 ? aderenciaData[aderenciaData.length - 1] : null;
+  const aderenciaAnterior = aderenciaData.length > 1 ? aderenciaData[aderenciaData.length - 2] : null;
+  const tendenciaAderencia = aderenciaAtual?.aderencia != null && aderenciaAnterior?.aderencia != null
+    ? aderenciaAtual.aderencia > aderenciaAnterior.aderencia ? '↑' : aderenciaAtual.aderencia < aderenciaAnterior.aderencia ? '↓' : '→'
+    : null;
 
   // Treino Rafa
   const diasAcademiaRafa = semana.filter(r => r.treinoTipo === 'academia' || r.treinoTipo === 'ambos').length;
@@ -228,7 +268,7 @@ export default function Dashboard() {
           <div>
             <h2 className="section-title">Bem-estar da semana</h2>
             {!modoCuidado && (
-              <div className="grid-4" style={{ marginBottom: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
                 <div className="card">
                   <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     Humor médio
@@ -251,11 +291,50 @@ export default function Dashboard() {
 
                 <div className="card">
                   <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Cancelamentos
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: totalCancelamentos > 0 ? '#f97316' : '#9333ea', lineHeight: 1 }}>
+                    {totalCancelamentos}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>essa semana</div>
+                </div>
+
+                <div className="card">
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     Conteúdo postado
                   </div>
                   <div style={{ fontSize: 22, fontWeight: 700, color: '#9333ea', lineHeight: 1 }}>{totalConteudo}</div>
                   <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>essa semana</div>
                 </div>
+
+                <div className="card">
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Lazer esta semana
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: diasComLazer > 0 ? '#9333ea' : '#64748b', lineHeight: 1 }}>
+                    {diasComLazer}<span style={{ fontSize: 14, color: '#64748b' }}>/7</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                    {diasComLazer > 0 ? [...lazeresSemanaAtual].join(', ') : 'nenhum registrado'}
+                  </div>
+                </div>
+
+                {aderenciaAtual && (
+                  <div className="card">
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                      Aderência rotina
+                    </div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: '#9333ea', lineHeight: 1 }}>
+                      {aderenciaAtual.aderencia != null ? `${aderenciaAtual.aderencia.toFixed(0)}%` : '—'}
+                      {tendenciaAderencia && (
+                        <span style={{ fontSize: 14, marginLeft: 6, color: tendenciaAderencia === '↑' ? '#22c55e' : tendenciaAderencia === '↓' ? '#ef4444' : '#94a3b8' }}>
+                          {tendenciaAderencia}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>esta semana</div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -354,7 +433,7 @@ export default function Dashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
 
           {!isRafa && (
-            <div className="card">
+            <div className="card chart-appear">
               <div className="muted" style={{ marginBottom: 14 }}>Horas de estudo por dia</div>
               {horasData.length === 0
                 ? <Empty texto="Nenhum estudo registrado ainda." />
@@ -372,7 +451,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div className="card">
+          <div className="card chart-appear" style={{ animationDelay: '0.05s' }}>
             <div className="muted" style={{ marginBottom: 14 }}>Humor por dia (semana)</div>
             {humorData.length === 0
               ? <Empty texto="Nenhum registro esta semana." />
@@ -390,7 +469,7 @@ export default function Dashboard() {
           </div>
 
           {isRafa && sonoData.length > 0 && (
-            <div className="card">
+            <div className="card chart-appear" style={{ animationDelay: '0.1s' }}>
               <div className="muted" style={{ marginBottom: 14 }}>Qualidade do sono por dia</div>
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={sonoData} barSize={28}>
@@ -405,7 +484,7 @@ export default function Dashboard() {
           )}
 
           {!isRafa && topicosData.length > 0 && (
-            <div className="card">
+            <div className="card chart-appear" style={{ animationDelay: '0.1s' }}>
               <div className="muted" style={{ marginBottom: 14 }}>Tópicos estudados</div>
               <ResponsiveContainer width="100%" height={Math.max(120, topicosData.length * 32)}>
                 <BarChart data={topicosData} layout="vertical" margin={{ left: 0, right: 16 }}>
@@ -420,6 +499,49 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Painel Lazer & Hiperfoco — Rafa */}
+      {isRafa && lazerData.length > 0 && (
+        <div>
+          <h2 className="section-title">Lazer & Hiperfoco</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+            <div className="card chart-appear">
+              <div className="muted" style={{ marginBottom: 14 }}>Lazeres por semana (soma de intensidades)</div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={lazerData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3e" vertical={false} />
+                  <XAxis dataKey="semana" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <Tooltip {...tooltipStyle} />
+                  <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
+                  {lazeresTodos.map((lazer, i) => (
+                    <Bar key={lazer} dataKey={lazer} stackId="a" fill={LAZER_CORES[i % LAZER_CORES.length]} radius={i === lazeresTodos.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {aderenciaData.some(d => d.aderencia != null) && (
+              <div className="card chart-appear" style={{ animationDelay: '0.05s' }}>
+                <div className="muted" style={{ marginBottom: 14 }}>Aderência à rotina (últimas semanas)</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={aderenciaData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3e" vertical={false} />
+                    <XAxis
+                      dataKey="semana"
+                      tickFormatter={s => { const d = new Date(s); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }}
+                      tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
+                    />
+                    <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <Tooltip {...tooltipStyle} formatter={v => v != null ? `${v}%` : '—'} />
+                    <Line type="monotone" dataKey="aderencia" stroke="#9333ea" strokeWidth={2} dot={{ r: 4, fill: '#9333ea' }} name="Aderência" connectNulls={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <FocoProjetos />
       {isRafa && modoCuidado ? (

@@ -20,9 +20,19 @@ namespace LeoDevTracker.API.Services
 
         public async Task<AnaliseSemanal> GerarAnaliseSemanal(string usuario)
         {
+            // Intervalo dinâmico: desde a última análise de desenvolvimento gerada
+            var ultimaAnalise = await _db.AnalisesSemanais
+                .Where(a => a.Usuario == usuario && a.Tipo == "desenvolvimento")
+                .OrderByDescending(a => a.CriadoEm)
+                .FirstOrDefaultAsync();
+
             var fim = DateTime.UtcNow;
-            var inicio = fim.AddDays(-7);
-            var inicioAnterior = inicio.AddDays(-7);
+            var inicio = ultimaAnalise != null && (fim - ultimaAnalise.SemanaFim).TotalHours >= 12
+                ? ultimaAnalise.SemanaFim
+                : fim.AddDays(-7);
+
+            var periodoDias = Math.Max((fim - inicio).TotalDays, 1);
+            var inicioAnterior = inicio.AddDays(-periodoDias);
 
             var registros = await _db.RegistrosDiarios
                 .Where(r => r.Usuario == usuario && r.Data >= inicio)
@@ -37,6 +47,24 @@ namespace LeoDevTracker.API.Services
                 .Where(p => p.Usuario == usuario && p.Status != "concluído")
                 .ToListAsync();
 
+            // Aderência à rotina (só para Rafa)
+            (double? aderenciaSemana, double? aderenciaAnterior) = (null, null);
+            if (usuario == "rafa")
+            {
+                var segundaAtual = GetSegunda(inicio);
+                var segundaAnterior = GetSegunda(inicioAnterior);
+
+                var checkinsSemana = await _db.RotinaCheckins
+                    .Where(c => c.Usuario == usuario && c.Semana.Date == segundaAtual.Date)
+                    .ToListAsync();
+                var checkinsAnterior = await _db.RotinaCheckins
+                    .Where(c => c.Usuario == usuario && c.Semana.Date == segundaAnterior.Date)
+                    .ToListAsync();
+
+                aderenciaSemana = CalcAderencia(checkinsSemana);
+                aderenciaAnterior = CalcAderencia(checkinsAnterior);
+            }
+
             var insightsDaSemana = registros
                 .Where(r => !string.IsNullOrWhiteSpace(r.InsightDiario))
                 .Select(r => (r.Data, Insight: r.InsightDiario!))
@@ -47,12 +75,20 @@ namespace LeoDevTracker.API.Services
                 .OrderByDescending(a => a.CriadoEm)
                 .FirstOrDefaultAsync();
             var resumoFinanceiro = ultimaFinanceira?.Conteudo is { Length: > 0 } c
-                ? c[..Math.Min(300, c.Length)]
+                ? c[..Math.Min(400, c.Length)]
                 : null;
 
+            List<MetaFinanceira> metas = [];
+            if (usuario != "rafa")
+            {
+                metas = await _db.MetasFinanceiras
+                    .Where(m => m.Usuario == usuario)
+                    .ToListAsync();
+            }
+
             var prompt = usuario == "rafa"
-                ? MontarPromptRafa(registros, anteriores, projetos, inicio, fim, insightsDaSemana)
-                : MontarPromptLeo(registros, anteriores, projetos, inicio, fim, insightsDaSemana, resumoFinanceiro);
+                ? MontarPromptRafa(registros, anteriores, projetos, inicio, fim, insightsDaSemana, aderenciaSemana, aderenciaAnterior, ultimaAnalise)
+                : MontarPromptLeo(registros, anteriores, projetos, inicio, fim, insightsDaSemana, resumoFinanceiro, metas, ultimaAnalise);
 
             _logger.LogInformation("GerarAnaliseSemanal: chamando Gemini para {Usuario}, registros={Count}", usuario, registros.Count);
             var conteudo = await _ai.Enviar(prompt, AiModelos.Flash, maxTokens: 1200, thinkingBudget: 2048);
@@ -83,87 +119,124 @@ namespace LeoDevTracker.API.Services
             List<Projeto> projetos,
             DateTime inicio,
             DateTime fim,
-            List<(DateTime Data, string Insight)> insightsDaSemana)
+            List<(DateTime Data, string Insight)> insightsDaSemana,
+            double? aderenciaSemana,
+            double? aderenciaAnterior,
+            AnaliseSemanal? ultimaAnalise)
         {
-            var sonoVals      = registros.Select(r => ExtrasHelper.GetInt(r.DadosExtras, "qualidadeSono")).Where(v => v > 0).ToList();
-            var sonoMedio     = sonoVals.Count > 0 ? sonoVals.Average() : 0;
-            var totalAtend    = registros.Sum(r => ExtrasHelper.GetInt(r.DadosExtras, "atendimentos"));
-            var totalConteudo = registros.Sum(r => ExtrasHelper.GetInt(r.DadosExtras, "conteudoPostado"));
-            var gratidoes     = registros.Select(r => ExtrasHelper.GetString(r.DadosExtras, "gratidao")).Where(g => !string.IsNullOrWhiteSpace(g)).ToList();
+            var sonoVals       = registros.Select(r => ExtrasHelper.GetInt(r.DadosExtras, "qualidadeSono")).Where(v => v > 0).ToList();
+            var sonoMedio      = sonoVals.Count > 0 ? sonoVals.Average() : 0;
+            var sonoAnt        = anteriores.Select(r => ExtrasHelper.GetInt(r.DadosExtras, "qualidadeSono")).Where(v => v > 0).ToList();
+            var sonoMedioAnt   = sonoAnt.Count > 0 ? sonoAnt.Average() : 0;
 
-            var humorList     = registros.Where(r => r.Humor.HasValue).Select(r => (double)r.Humor!.Value).ToList();
-            var humorMedio    = humorList.Count > 0 ? humorList.Average() : 0;
+            var totalAtend     = registros.Sum(r => ExtrasHelper.GetInt(r.DadosExtras, "atendimentos"));
+            var totalAtendAnt  = anteriores.Sum(r => ExtrasHelper.GetInt(r.DadosExtras, "atendimentos"));
+            var totalConteudo  = registros.Sum(r => ExtrasHelper.GetInt(r.DadosExtras, "conteudoPostado"));
+            var totalCancelam  = registros.Sum(r => ExtrasHelper.GetInt(r.DadosExtras, "cancelamentos"));
+            var gratidoes      = registros.Select(r => ExtrasHelper.GetString(r.DadosExtras, "gratidao")).Where(g => !string.IsNullOrWhiteSpace(g)).ToList();
+
+            var lazeresMap = new Dictionary<string, List<int>>();
+            foreach (var r in registros)
+            {
+                var lazer = ExtrasHelper.GetString(r.DadosExtras, "lazer");
+                var intensidade = ExtrasHelper.GetInt(r.DadosExtras, "lazerIntensidade");
+                if (!string.IsNullOrWhiteSpace(lazer) && intensidade > 0)
+                {
+                    if (!lazeresMap.ContainsKey(lazer)) lazeresMap[lazer] = [];
+                    lazeresMap[lazer].Add(intensidade);
+                }
+            }
+            var diasComLazer = registros.Count(r => !string.IsNullOrWhiteSpace(ExtrasHelper.GetString(r.DadosExtras, "lazer")));
+
+            var humorList      = registros.Where(r => r.Humor.HasValue).Select(r => (double)r.Humor!.Value).ToList();
+            var humorMedio     = humorList.Count > 0 ? humorList.Average() : 0;
+            var humorListAnt   = anteriores.Where(r => r.Humor.HasValue).Select(r => (double)r.Humor!.Value).ToList();
+            var humorMedioAnt  = humorListAnt.Count > 0 ? humorListAnt.Average() : 0;
             var diasHumorBaixo = humorList.Count(h => h < 3);
 
-            var diasAcademia  = registros.Count(r => r.TreinoTipo == "academia" || r.TreinoTipo == "ambos");
-            var diasCaminhada = registros.Count(r => r.TreinoTipo == "caminhada/corrida" || r.TreinoTipo == "ambos");
-            var diasBike      = registros.Count(r => r.TreinoTipo == "bike");
+            var diasAcademia   = registros.Count(r => r.TreinoTipo == "academia" || r.TreinoTipo == "ambos");
+            var diasCaminhada  = registros.Count(r => r.TreinoTipo == "caminhada/corrida" || r.TreinoTipo == "ambos");
+            var diasBike       = registros.Count(r => r.TreinoTipo == "bike");
+            var diasAcademiaAnt = anteriores.Count(r => r.TreinoTipo == "academia" || r.TreinoTipo == "ambos");
+
             var conquistasList = registros.Where(r => !string.IsNullOrWhiteSpace(r.Conquistas)).Select(r => r.Conquistas!).ToList();
             var desafiosList   = registros.Where(r => !string.IsNullOrWhiteSpace(r.Desafios)).Select(r => r.Desafios!).ToList();
-            var projetosStr    = projetos.Count > 0
-                ? string.Join("\n", projetos.Select(p => $"- {p.Nome} ({p.Percentual}%, {p.Status})"))
-                : "Nenhum projeto cadastrado.";
 
-            var alertaHumor = diasHumorBaixo >= 3
-                ? "ATENÇÃO: 3 ou mais dias com humor abaixo de 3 esta semana. Priorize isso na análise."
-                : "Humor estável.";
+            var alertaHumor3Dias = diasHumorBaixo >= 3
+                ? $"ALERTA CRITICO: {diasHumorBaixo} dias com humor < 3 neste periodo. Aborde com cuidado real na secao Padroes Preocupantes."
+                : "";
 
-            var modoCuidadoBloco = diasHumorBaixo >= 2 ? $"""
+            var modoCuidado = diasHumorBaixo >= 2
+                ? $"SEMANA DIFICIL ({diasHumorBaixo} dias humor ≤ 2): Comece reconhecendo o esforco. Nao abra com metas. Mencione algo concreto que ela fez bem. Tom: parceira que se importa."
+                : "";
 
-                ATENÇÃO — SEMANA DIFÍCIL ({diasHumorBaixo} dias com humor ≤ 2):
-                - Comece reconhecendo o esforço de ter chegado até aqui
-                - Não abra com metas não atingidas
-                - Não compare com semanas anteriores
-                - Mencione ao menos uma coisa concreta e boa que ela fez
-                - "O que pode melhorar": máximo 1 ponto, tom gentil
-                - Finalize sugerindo conversar com alguém de confiança se a semana pesada continuar — sem drama, como cuidado genuíno
-                - Tom: parceira que vê os dados e se importa, não coach
-                """ : "";
+            var lazeresBloco = lazeresMap.Count > 0
+                ? "Lazer: " + string.Join("; ", lazeresMap.Select(kv => $"{kv.Key} ({kv.Value.Average():F1}/5)")) + $" — {diasComLazer} dias"
+                : "Lazer: nenhum registrado" + (diasComLazer < 3 ? " (poucos dias — lazer protegido e parte das metas)" : "");
+
+            var aderenciaBloco = aderenciaSemana.HasValue
+                ? $"Aderencia a rotina: {aderenciaSemana:F0}%{(aderenciaAnterior.HasValue ? $" (periodo anterior: {aderenciaAnterior:F0}%)" : "")}"
+                : "Aderencia a rotina: sem dados de checkin";
+
+            var comparacaoBloco = anteriores.Count > 0 ? $"""
+                COMPARACAO COM PERIODO ANTERIOR ({inicioAnterior(inicio, fim):dd/MM} a {inicio:dd/MM}):
+                - Humor medio: {humorMedioAnt:F1}/5 → agora {humorMedio:F1}/5
+                - Sono medio: {(sonoMedioAnt > 0 ? $"{sonoMedioAnt:F1}/5" : "sem dados")} → agora {(sonoMedio > 0 ? $"{sonoMedio:F1}/5" : "sem dados")}
+                - Atendimentos: {totalAtendAnt} → agora {totalAtend}
+                - Academia: {diasAcademiaAnt}x → agora {diasAcademia}x
+                """ : "COMPARACAO: sem dados do periodo anterior.";
+
+            var contextoUltimaAnalise = ultimaAnalise?.Conteudo is { Length: > 50 } prev
+                ? $"CONTEXTO DA ULTIMA ANALISE (referencia para comparacao):\n{prev[..Math.Min(400, prev.Length)]}"
+                : "";
 
             return $"""
-                Você é uma mentora próxima da Rafa. Analise a semana de {inicio:dd/MM/yyyy} a {fim:dd/MM/yyyy}.
-                {modoCuidadoBloco}
+                Voce e uma mentora proxima da Rafa. Analise o periodo de {inicio:dd/MM/yyyy} a {fim:dd/MM/yyyy} ({registros.Count} dias registrados).
+                {modoCuidado}
+                {alertaHumor3Dias}
 
                 {PerfilRafa()}
 
-                BEM-ESTAR DA SEMANA:
-                - Humor médio: {humorMedio:F1}/5 ({diasHumorBaixo} dias abaixo de 3)
-                - Sono médio: {(sonoMedio > 0 ? $"{sonoMedio:F1}/5" : "não informado")}
-                - {alertaHumor}
+                BEM-ESTAR:
+                - Humor medio: {humorMedio:F1}/5 ({diasHumorBaixo} dias abaixo de 3)
+                - Sono medio: {(sonoMedio > 0 ? $"{sonoMedio:F1}/5" : "nao informado")}
+                - {lazeresBloco}
 
                 TRABALHO:
-                - Total de atendimentos: {totalAtend}
-                - Conteúdos postados: {totalConteudo} (meta: 3/semana)
+                - Atendimentos: {totalAtend} | Cancelamentos: {totalCancelam}{(totalCancelam > 0 ? " (verifique impacto)" : "")}
+                - Conteudos postados: {totalConteudo} (meta: 3/semana)
 
                 TREINO:
-                - Dias de academia: {diasAcademia}
-                - Dias de caminhada/corrida: {diasCaminhada}
-                - Dias de bike: {diasBike}
+                - Academia: {diasAcademia}x | Caminhada/corrida: {diasCaminhada}x | Bike: {diasBike}x
 
-                REFLEXÕES DA SEMANA:
-                - Conquistas: {(conquistasList.Count > 0 ? string.Join("; ", conquistasList) : "nenhuma")}
-                - Desafios: {(desafiosList.Count > 0 ? string.Join("; ", desafiosList) : "nenhum")}
+                {aderenciaBloco}
 
-                GRATIDÕES DA SEMANA:
-                {(gratidoes.Count > 0 ? string.Join("\n", gratidoes.Select(g => $"- {g}")) : "Nenhuma gratidão registrada.")}
+                {comparacaoBloco}
 
-                {(insightsDaSemana.Count > 0
-                    ? "INSIGHTS DIÁRIOS:\n" + string.Join("\n", insightsDaSemana.Select(i => $"- {i.Data:dd/MM}: {i.Insight}"))
-                    : "")}
+                REFLEXOES:
+                - Conquistas: {(conquistasList.Count > 0 ? string.Join("; ", conquistasList) : "nenhuma registrada")}
+                - Desafios: {(desafiosList.Count > 0 ? string.Join("; ", desafiosList) : "nenhum registrado")}
+                - Gratidoes ({gratidoes.Count}): {(gratidoes.Count > 0 ? string.Join("; ", gratidoes.Take(5)) : "nenhuma")}
 
-                PROJETOS:
-                {projetosStr}
+                {(insightsDaSemana.Count > 0 ? "INSIGHTS DIARIOS:\n" + string.Join("\n", insightsDaSemana.Select(i => $"- {i.Data:dd/MM}: {i.Insight}")) : "")}
 
-                GERE:
-                1. Uma frase que resume a semana em uma linha
-                2. O que foi bem — máximo 3 pontos específicos (inclua treino e bem-estar quando relevante)
-                3. O que pode melhorar — máximo 2 pontos com sugestão prática
-                {(diasHumorBaixo >= 3 ? "4. Aborde o padrão de humor baixo com cuidado real — ela é psicóloga, pode receber feedback honesto sobre saúde mental. Sugira algo concreto, não genérico." : "4. Um padrão observado ou recomendação para a próxima semana")}
-                5. Uma frase de fechamento motivadora mas verdadeira
+                {contextoUltimaAnalise}
 
-                Tom: direto, com base nos dados, motivador sem ser condescendente.
-                Sem listas com emoji. Máximo 400 palavras.
+                GERE uma analise estruturada em exatamente 4 secoes com esses titulos:
+                Visao Geral
+                Destaques
+                Padroes Preocupantes
+                Foco para o Proximo Periodo
+
+                Tom: acolhedor mas honesto, com base nos dados. Sem emojis. Maximo 400 palavras.
+                Se houver alerta de humor baixo, nao ignore — trate com cuidado genuino na secao Padroes Preocupantes.
                 """;
+        }
+
+        private static DateTime inicioAnterior(DateTime inicio, DateTime fim)
+        {
+            var dur = (fim - inicio).TotalDays;
+            return inicio.AddDays(-dur);
         }
 
         private static string PerfilRafa() => """
@@ -190,7 +263,9 @@ namespace LeoDevTracker.API.Services
             DateTime inicio,
             DateTime fim,
             List<(DateTime Data, string Insight)> insightsDaSemana,
-            string? resumoFinanceiro)
+            string? resumoFinanceiro,
+            List<MetaFinanceira> metas,
+            AnaliseSemanal? ultimaAnalise)
         {
             var totalHoras       = registros.Sum(r => r.HorasEstudo ?? 0);
             var horasAnterior    = anteriores.Sum(r => r.HorasEstudo ?? 0);
@@ -201,76 +276,105 @@ namespace LeoDevTracker.API.Services
             var horasTrabalhadas = registros.Sum(r => r.HorasTrabalhadas ?? 0);
             var humorList        = registros.Where(r => r.Humor.HasValue).Select(r => (double)r.Humor!.Value).ToList();
             var humorMedio       = humorList.Count != 0 ? humorList.Average() : 0;
+            var humorAnt         = anteriores.Where(r => r.Humor.HasValue).Select(r => (double)r.Humor!.Value).ToList();
+            var humorMedioAnt    = humorAnt.Count != 0 ? humorAnt.Average() : 0;
             var conquistasList   = registros.Where(r => !string.IsNullOrWhiteSpace(r.Conquistas)).Select(r => r.Conquistas!).ToList();
             var desafiosList     = registros.Where(r => !string.IsNullOrWhiteSpace(r.Desafios)).Select(r => r.Desafios!).ToList();
             var destaques        = registros.Where(r => !string.IsNullOrWhiteSpace(r.Destaque)).Select(r => r.Destaque!).ToList();
             var diasAcademia     = registros.Count(r => r.TreinoTipo == "academia" || r.TreinoTipo == "ambos");
             var diasVolei        = registros.Count(r => r.TreinoTipo == "volei" || r.TreinoTipo == "ambos");
+            var diasAcademiaAnt  = anteriores.Count(r => r.TreinoTipo == "academia" || r.TreinoTipo == "ambos");
             var rendList         = registros.Where(r => r.TreinoRendimento.HasValue).Select(r => (double)r.TreinoRendimento!.Value).ToList();
             var rendMedio        = rendList.Count != 0 ? rendList.Average() : 0;
-            var obsTreino        = registros.Where(r => !string.IsNullOrWhiteSpace(r.TreinoObs)).Select(r => r.TreinoObs!).ToList();
             var projetosStr      = projetos.Count != 0
-                ? string.Join("\n", projetos.Select(p => $"- {p.Nome} ({p.Percentual}% concluído, {p.Status})"))
+                ? string.Join("\n", projetos.Select(p =>
+                    $"- {p.Nome}: {p.Percentual}%{(p.ProximoPasso != null ? $" → proximo: {p.ProximoPasso}" : "")} ({p.Status})"))
                 : "Nenhum projeto em andamento.";
 
+            var metasBloco = metas.Count > 0
+                ? "METAS FINANCEIRAS:\n" + string.Join("\n", metas.Select(m =>
+                {
+                    var prog = m.ValorMeta > 0 ? (double)m.ValorAtual / (double)m.ValorMeta * 100 : 0;
+                    return $"- {m.Descricao}: R$ {m.ValorAtual:F0} / R$ {m.ValorMeta:F0} ({prog:F0}%)" +
+                           (m.Prazo.HasValue ? $" — prazo {m.Prazo:dd/MM/yyyy}" : "");
+                }))
+                : "METAS FINANCEIRAS: nenhuma cadastrada.";
+
+            var comparacaoBloco = anteriores.Count > 0 ? $"""
+                COMPARACAO COM PERIODO ANTERIOR ({inicioAnterior(inicio, fim):dd/MM} a {inicio:dd/MM}):
+                - Horas de estudo: {horasAnterior:F1}h → agora {totalHoras:F1}h
+                - Humor medio: {humorMedioAnt:F1}/5 → agora {humorMedio:F1}/5
+                - Academia: {diasAcademiaAnt}x → agora {diasAcademia}x
+                """ : "COMPARACAO: sem dados do periodo anterior.";
+
+            var contextoUltimaAnalise = ultimaAnalise?.Conteudo is { Length: > 50 } prev
+                ? $"CONTEXTO DA ULTIMA ANALISE (para verificar progresso):\n{prev[..Math.Min(400, prev.Length)]}"
+                : "";
+
             return $"""
-                Você é um mentor de desenvolvimento pessoal e profissional.
-                Analise os dados da semana de {inicio:dd/MM/yyyy} a {fim:dd/MM/yyyy} de Leo
-                e gere um relatório honesto, direto e útil.
+                Voce e um mentor de desenvolvimento pessoal e profissional de Leo.
+                Analise o periodo de {inicio:dd/MM/yyyy} a {fim:dd/MM/yyyy} ({registros.Count} dias registrados).
 
                 PERFIL:
-                - 26 anos, dev em transição (suporte → júnior) na Rift Sistemas
-                - Stack principal: C#/.NET, SQL Server, React
-                - Meta de carreira: dev júnior em 6-9 meses, pleno em 3 anos
-                - Treina academia 5x por semana e joga vôlei 2x por semana
-                - Lida com tendência a desistir sob pressão — prefere feedback
-                  que reconhece o esforço sem ser condescendente
+                - 26 anos, dev em transicao (suporte → junior) na Rift Sistemas
+                - Stack: C#/.NET, SQL Server, React
+                - Meta: dev junior em 6-9 meses, pleno em 3 anos
+                - Treina academia 5x/semana, volei 2x/semana
+                - Tendencia a desistir sob pressao — quer feedback honesto, nao condescendente
 
-                DADOS DA SEMANA:
+                ESTUDOS E TRABALHO:
+                - Horas estudadas: {totalHoras:F1}h | Topicos: {(topicos.Count != 0 ? string.Join(", ", topicos) : "nenhum")}
+                - Rift: {features} feat, {bugs} bugs, {tickets} tickets, {horasTrabalhadas:F1}h trabalhadas
 
-                Estudos e trabalho:
-                - Horas estudadas: {totalHoras:F1}h (semana anterior: {horasAnterior:F1}h)
-                - Tópicos estudados: {(topicos.Count != 0 ? string.Join(", ", topicos) : "nenhum")}
-                - Features entregues na Rift: {features}
-                - Bugs resolvidos: {bugs}
-                - Tickets trabalhados: {tickets}
-                - Horas trabalhadas: {horasTrabalhadas:F1}h
+                HUMOR: medio {humorMedio:F1}/5
 
-                Reflexão:
-                - Conquistas relatadas: {(conquistasList.Count != 0 ? string.Join("; ", conquistasList) : "nenhuma")}
-                - Desafios relatados: {(desafiosList.Count != 0 ? string.Join("; ", desafiosList) : "nenhum")}
-                - Destaques relatados: {(destaques.Count != 0 ? string.Join("; ", destaques) : "nenhum")}
+                TREINO:
+                - Academia: {diasAcademia}x (meta 5x) | Volei: {diasVolei}x (meta 2x)
+                - Rendimento medio: {(rendMedio > 0 ? $"{rendMedio:F1}/5" : "nao informado")}
 
-                Humor:
-                - Humor médio: {humorMedio:F1}/5
+                REFLEXOES:
+                - Conquistas: {(conquistasList.Count != 0 ? string.Join("; ", conquistasList) : "nenhuma")}
+                - Desafios: {(desafiosList.Count != 0 ? string.Join("; ", desafiosList) : "nenhum")}
+                - Destaques: {(destaques.Count != 0 ? string.Join("; ", destaques) : "nenhum")}
 
-                Treino físico:
-                - Dias de academia: {diasAcademia} (meta: 5x/semana)
-                - Dias de vôlei: {diasVolei} (meta: 2x/semana)
-                - Rendimento médio nos treinos: {(rendMedio > 0 ? $"{rendMedio:F1}/5" : "não informado")}
-                - Observações de treino: {(obsTreino.Count != 0 ? string.Join("; ", obsTreino) : "nenhuma")}
-
-                Projetos pessoais:
+                PROJETOS ATIVOS:
                 {projetosStr}
 
-                {(insightsDaSemana.Count != 0
-                    ? "INSIGHTS DIÁRIOS DA SEMANA:\n" + string.Join("\n", insightsDaSemana.Select(i => $"- {i.Data:dd/MM}: {i.Insight}"))
-                    : "")}
+                {metasBloco}
 
-                {(resumoFinanceiro != null ? $"CONTEXTO FINANCEIRO DA SEMANA:\n{resumoFinanceiro}" : "")}
+                {comparacaoBloco}
 
-                GERE:
-                1. Uma frase de abertura que resume a semana em uma linha
-                2. O que foi bem — máximo 3 pontos, específicos (inclua treino se relevante)
-                3. O que pode melhorar — máximo 2 pontos, com sugestão prática
-                4. Um padrão identificado ao longo das últimas semanas (se houver dados suficientes)
-                5. Uma recomendação concreta para a próxima semana
-                6. Uma frase de fechamento motivacional mas realista — sem clichê
+                {(insightsDaSemana.Count != 0 ? "INSIGHTS DIARIOS:\n" + string.Join("\n", insightsDaSemana.Select(i => $"- {i.Data:dd/MM}: {i.Insight}")) : "")}
 
-                Seja direto. Não use listas com emoji. Máximo 400 palavras.
-                Quando treino e produtividade estiverem correlacionados nos dados, mencione essa relação explicitamente.
+                {contextoUltimaAnalise}
+
+                {(resumoFinanceiro != null ? $"CONTEXTO FINANCEIRO:\n{resumoFinanceiro}" : "")}
+
+                GERE uma analise estruturada em exatamente 4 secoes com esses titulos:
+                Visao Geral
+                Destaques
+                Padroes Preocupantes
+                Foco para o Proximo Periodo
+
+                Seja direto. Sem emojis. Maximo 400 palavras.
+                Se treino e produtividade estiverem correlacionados nos dados, mencione explicitamente.
+                Se metas financeiras estiverem estagnadas, mencione em Padroes Preocupantes.
                 """;
         }
 
+        private static DateTime GetSegunda(DateTime data)
+        {
+            var dia = data.DayOfWeek;
+            var diff = dia == DayOfWeek.Sunday ? -6 : -(int)dia + 1;
+            return data.AddDays(diff).Date;
+        }
+
+        private static double? CalcAderencia(List<RotinaCheckin> checkins)
+        {
+            var feitos = checkins.Count(c => c.Status == "feito");
+            var naoFeitos = checkins.Count(c => c.Status == "nao_feito");
+            var total = feitos + naoFeitos;
+            return total > 0 ? Math.Round((double)feitos / total * 100, 1) : null;
+        }
     }
 }

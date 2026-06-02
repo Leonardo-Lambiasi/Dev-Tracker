@@ -20,41 +20,66 @@ const PRIORIDADE_COR = {
 };
 
 function AnaliseVisual({ dados }) {
-  const { resumo, categorias, maioresGastos, padrao, recomendacao, dicas } = dados;
-  const dicasValidas = (dicas ?? []).filter(d => d.titulo && d.texto);
-  const saldoPos = (resumo?.saldo ?? 0) >= 0;
-  const categoriasComValor = (categorias ?? []).filter(c => c.valor > 0);
+  // Detecta formato novo (resumo = string) vs formato antigo (resumo = objeto)
+  const isNovoFormato = typeof dados.resumo === 'string';
+
+  const categorias = (dados.categorias ?? []).filter(c => c.valor > 0);
+  // suporte a maioresGastos (antigo) e maiores_gastos (novo)
+  const maioresGastos = dados.maiores_gastos ?? dados.maioresGastos ?? [];
+  const { padrao, recomendacao } = dados;
+  // campos novos
+  const projecao = dados.projecao;
+  const acoes = dados.acoes_concretas ?? [];
+  const alertas = dados.alertas ?? [];
+  const metasImpacto = dados.metas_impacto ?? [];
+  // campos antigos
+  const dicasValidas = (dados.dicas ?? []).filter(d => d.titulo && d.texto);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Resumo */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-        <div style={{ background: '#10b98115', border: '1px solid #10b98130', borderRadius: 8, padding: '12px 14px' }}>
-          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}>Entradas</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#10b981' }}>{fmtBRL(resumo?.entradas)}</div>
+      {isNovoFormato ? (
+        <div style={{ background: '#6366f110', border: '1px solid #6366f130', borderRadius: 8, padding: '12px 14px' }}>
+          <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}>Resumo</div>
+          <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>{dados.resumo}</div>
         </div>
-        <div style={{ background: '#ef444415', border: '1px solid #ef444430', borderRadius: 8, padding: '12px 14px' }}>
-          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}>Saídas</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#ef4444' }}>{fmtBRL(resumo?.saidas)}</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          <div style={{ background: '#10b98115', border: '1px solid #10b98130', borderRadius: 8, padding: '12px 14px' }}>
+            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}>Entradas</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#10b981' }}>{fmtBRL(dados.resumo?.entradas)}</div>
+          </div>
+          <div style={{ background: '#ef444415', border: '1px solid #ef444430', borderRadius: 8, padding: '12px 14px' }}>
+            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}>Saídas</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#ef4444' }}>{fmtBRL(dados.resumo?.saidas)}</div>
+          </div>
+          <div style={{
+            background: (dados.resumo?.saldo ?? 0) >= 0 ? '#10b98115' : '#ef444415',
+            border: `1px solid ${(dados.resumo?.saldo ?? 0) >= 0 ? '#10b98130' : '#ef444430'}`,
+            borderRadius: 8, padding: '12px 14px',
+          }}>
+            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}>Saldo</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: (dados.resumo?.saldo ?? 0) >= 0 ? '#10b981' : '#ef4444' }}>{fmtBRL(dados.resumo?.saldo)}</div>
+          </div>
         </div>
-        <div style={{
-          background: saldoPos ? '#10b98115' : '#ef444415',
-          border: `1px solid ${saldoPos ? '#10b98130' : '#ef444430'}`,
-          borderRadius: 8, padding: '12px 14px',
-        }}>
-          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}>Saldo</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: saldoPos ? '#10b981' : '#ef4444' }}>{fmtBRL(resumo?.saldo)}</div>
+      )}
+
+      {/* Projeção (novo) */}
+      {projecao && (
+        <div style={{ background: '#f59e0b10', border: '1px solid #f59e0b30', borderRadius: 8, padding: '12px 14px' }}>
+          <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}>Projeção do mês</div>
+          <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>{projecao}</div>
         </div>
-      </div>
+      )}
 
       {/* Categorias */}
-      {categoriasComValor.length > 0 && (
+      {categorias.length > 0 && (
         <div>
           <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
             Gastos por categoria
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {categoriasComValor.map((cat, i) => (
+            {categorias.map((cat, i) => (
               <div key={i}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ fontSize: 13, color: '#cbd5e1' }}>{cat.nome}</span>
@@ -63,10 +88,7 @@ function AnaliseVisual({ dados }) {
                   </span>
                 </div>
                 <div style={{ background: '#2a2d3e', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${Math.min(Number(cat.percentual ?? 0), 100)}%`,
-                    height: '100%', background: '#6366f1', borderRadius: 4,
-                  }} />
+                  <div style={{ width: `${Math.min(Number(cat.percentual ?? 0), 100)}%`, height: '100%', background: '#6366f1', borderRadius: 4 }} />
                 </div>
               </div>
             ))}
@@ -75,7 +97,7 @@ function AnaliseVisual({ dados }) {
       )}
 
       {/* Maiores gastos */}
-      {maioresGastos?.length > 0 && (
+      {maioresGastos.length > 0 && (
         <div>
           <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
             Top gastos
@@ -86,10 +108,7 @@ function AnaliseVisual({ dados }) {
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 padding: '8px 12px', background: '#0f1117', borderRadius: 6, border: '1px solid #2a2d3e',
               }}>
-                <div>
-                  <span style={{ fontSize: 13, color: '#cbd5e1' }}>{g.descricao}</span>
-                  {g.data && <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>{g.data}</span>}
-                </div>
+                <span style={{ fontSize: 13, color: '#cbd5e1' }}>{g.descricao}</span>
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#ef4444' }}>{fmtBRL(g.valor)}</span>
               </div>
             ))}
@@ -115,7 +134,49 @@ function AnaliseVisual({ dados }) {
         </div>
       )}
 
-      {/* Dicas personalizadas */}
+      {/* Ações concretas (novo) */}
+      {acoes.length > 0 && (
+        <div style={{ background: '#10b98110', border: '1px solid #10b98130', borderRadius: 8, padding: '12px 14px' }}>
+          <div style={{ fontSize: 11, color: '#10b981', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase' }}>Ações concretas</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {acoes.map((a, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, fontSize: 13, color: '#cbd5e1', lineHeight: 1.5 }}>
+                <span style={{ color: '#10b981', fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span>
+                <span>{a}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Alertas (novo) */}
+      {alertas.length > 0 && (
+        <div style={{ background: '#ef444415', border: '1px solid #ef444440', borderRadius: 8, padding: '12px 14px' }}>
+          <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase' }}>Alertas</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {alertas.map((a, i) => (
+              <div key={i} style={{ fontSize: 13, color: '#fca5a5', lineHeight: 1.5 }}>• {a}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Impacto nas metas (novo) */}
+      {metasImpacto.length > 0 && (
+        <div style={{ background: '#8b5cf610', border: '1px solid #8b5cf630', borderRadius: 8, padding: '12px 14px' }}>
+          <div style={{ fontSize: 11, color: '#8b5cf6', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase' }}>Impacto nas metas</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {metasImpacto.map((m, i) => (
+              <div key={i}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 2 }}>{m.meta}</div>
+                <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.5 }}>{m.observacao}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Dicas (formato antigo — retrocompatibilidade) */}
       {dicasValidas.length > 0 && (
         <div>
           <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>

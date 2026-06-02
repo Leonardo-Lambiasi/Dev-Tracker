@@ -1,163 +1,119 @@
-# Meu Tracker Pessoal — Perfil da Rafa
+# Dev Tracker — Perfil da Rafa
 
-> Preencha com calma. Não precisa ser perfeito — pode escrever em linguagem normal, sem formalidade.
-> O Leo vai usar isso para montar o app do jeito que faz sentido pra você.
-
----
-
-## 1. Sobre você
-
-**Nome:** Rafa
-
-**Idade:** ___
-
-**O que você faz hoje?**
-_(ex: estudante de medicina, nutricionista CLT, freelancer de design, concurseira...)_
-
-```
-[escreva aqui]
-```
-
-**Qual é sua meta principal nos próximos meses?**
-_(ex: passar na residência, conseguir primeira CLT, lançar portfólio, emagrecer 8kg...)_
-
-```
-[escreva aqui]
-```
-
-**Uma coisa que te atrapalha quando tenta manter uma rotina:**
-_(ex: fico me distraindo com o celular, perco o foco à tarde, fico ansiosa com prazo...)_
-
-```
-[escreva aqui]
-```
+Documento de referência para o perfil e personalização do app da Rafa. Estado: configurado e em produção desde maio/2026.
 
 ---
 
-## 2. O que você quer registrar todo dia?
+## Perfil
 
-Marque o que faz sentido pra você e complemente se precisar.
-
-### Estudos / Trabalho
-
-- [ ] Horas que estudei
-- [ ] O que estudei (matéria, tópico, skill)
-- [ ] Horas que trabalhei
-- [ ] O que produzi no trabalho (ex: relatório, atendimento, projeto)
-- [ ] Outro: _______________
-
-**Como você chama o que produz no dia a dia?**
-_(ex: laudos, consultas, tarefas, páginas lidas, exercícios feitos, clientes atendidos...)_
-
-```
-[escreva aqui]
-```
+| Campo | Valor |
+|---|---|
+| Nome | Rafa |
+| Idade | 30 anos |
+| Profissão | Psicóloga clínica especialista em TCC |
+| Trabalho | Atendimentos clínicos, supervisão, estudo contínuo |
+| Meta principal | Crescer a clínica + equilibrar saúde com trabalho |
+| Produção de conteúdo | Redes sociais como parte do trabalho (meta: 3 posts/semana) |
+| Gratidão | Pratica registro diário |
+| Treino | Academia (meta 3x/semana) + caminhada/corrida (meta 2x/semana) + bike quando possível |
+| Característica relevante | Tendência à perda de foco e pensamento excessivo; quer feedback que reconhece o esforço sem ser genérico |
+| Tema visual | Roxo `#9333ea` |
 
 ---
 
-### Saúde e corpo
+## Campos do registro diário (Rafa)
 
-- [ ] Academia / musculação
-- [ ] Caminhada / corrida
-- [ ] Pilates / yoga
-- [ ] Dança
-- [ ] Outro: _______________
+| Seção | Campo | Tipo |
+|---|---|---|
+| Geral | Data | date (default: hoje local) |
+| Geral | Humor | 1–5 colorido (vermelho→verde), obrigatório |
+| Saúde & Bem-estar | Qualidade do sono | 1–5 |
+| Saúde & Bem-estar | Atendimentos realizados | inteiro (0–20) |
+| Saúde & Bem-estar | Conteúdos postados | inteiro (0–10) |
+| Saúde & Bem-estar | Cancelamentos | inteiro (0–10) + motivo se > 0 |
+| Saúde & Bem-estar | Gratidão do dia | textarea |
+| Lazer | Lazer do dia | seleção da lista cadastrada |
+| Lazer | Intensidade/foco | 1–5 |
+| Lazer | Observação | textarea |
+| Treino | Tipo | Academia / Caminhada-Corrida / Bike / Nenhum |
+| Treino | Rendimento | 1–5 |
+| Treino | Observação | textarea |
+| Reflexão | Conquistas | textarea |
+| Reflexão | Desafios | textarea |
+| Reflexão | Destaques | textarea |
 
-**Quantas vezes por semana você quer treinar?** ___
-
-**Você quer registrar como se sentiu no treino (1 a 5)?** [ ] Sim / [ ] Não
-
----
-
-### Alimentação / saúde extra
-
-- [ ] Se tomou água / meta de litros
-- [ ] Se seguiu a dieta
-- [ ] Qualidade do sono
-- [ ] Outro: _______________
-
----
-
-### Humor e bem-estar
-
-**Você quer registrar seu humor do dia?** [ ] Sim / [ ] Não
-
-**Quer registrar alguma dessas reflexões diárias?**
-
-- [ ] Conquistas do dia
-- [ ] Desafios / o que travou
-- [ ] Destaques / insight do dia
-- [ ] Gratidão
-- [ ] Outro: _______________
+Todos os campos de atendimentos/conteúdo são ocultados quando humor ≤ 2 (modo cuidado no formulário).
 
 ---
 
-## 3. Projetos pessoais
+## Métricas do dashboard (Rafa)
 
-Você tem algum projeto em andamento que quer acompanhar o progresso?
-_(ex: estudar para concurso, montar negócio próprio, criar canal no YouTube, escrever um livro...)_
+- Humor médio da semana
+- Atendimentos da semana
+- Cancelamentos da semana
+- Conteúdo postado da semana
+- Dias com lazer registrado (`X/7`)
+- Aderência à rotina (% com seta de tendência)
+- Card "Coisas boas" — gratidões + conquistas da semana
 
-```
-[liste aqui — pode ser 1, pode ser vários]
-```
-
----
-
-## 4. Financeiro
-
-**Você quer usar o app para organizar suas finanças?** [ ] Sim / [ ] Não
-
-Se sim:
-
-**Que tipo de meta financeira faz sentido pra você?**
-_(ex: juntar R$ 5.000 até dezembro, gastar no máximo R$ 300 em delivery por mês...)_
-
-```
-[escreva aqui]
-```
-
-**Você quer poder colar o extrato do banco e o app categorizar os gastos com IA?** [ ] Sim / [ ] Não
+### Gráficos
+- Barras: humor por dia (semana atual)
+- Barras: qualidade do sono por dia (semana atual)
+- Barras empilhadas: lazeres por semana (últimas 4 semanas)
+- Linha: aderência à rotina (últimas 4 semanas)
 
 ---
 
-## 5. Relatório semanal com IA
+## Modo cuidado
 
-O app pode gerar toda semana um relatório analisando seus dados e te dar um feedback honesto.
+Ativado automaticamente quando média de humor dos últimos 3 registros < 2.
 
-**Você quer esse relatório?** [ ] Sim / [ ] Não
+**No dashboard:**
+- Banner de acolhimento visível (dispensável com ×)
+- Seções de treino e rotina colapsam por padrão
+- Cards de métricas ocultados (substituídos pelo card "Coisas boas")
 
-**Como você prefere o tom do feedback?**
-
-- [ ] Direto e sem rodeios
-- [ ] Motivador, reconhece o esforço
-- [ ] Técnico, focado em dados
-- [ ] Outro: _______________
-
-**Tem algo que você definitivamente NÃO quer que o app comente?**
-
-```
-[escreva aqui — ou deixe em branco]
-```
+**No insight diário:**
+- Se humor do dia ≤ 2: prompt específico (modo cuidado) — 2 partes: acolhimento + ação gentil. Tom: amiga, não coach. Sem mencionar produtividade ou metas.
+- Se humor > 2 mas média dos 3 últimos ≤ 2: alerta incluído no prompt padrão
 
 ---
 
-## 6. Visual e nome
+## Personalização da IA (Rafa)
 
-**Que nome você daria pro seu app?**
-_(ex: Meu Diário, Rafa Tracker, Foco Total... pode ser qualquer coisa)_
+### Insight diário
+- **Tom:** acolhedora mas honesta, como amiga que olha os dados com cuidado
+- **Contexto:** dia atual + últimos 5 registros (tendência de sono, atendimentos, treino, humor)
+- **Saída:** 3 frases — 1ª: observação honesta; 2ª: encorajamento genuíno baseado nos dados; 3ª: ação concreta para amanhã
+- **Máximo:** 100 palavras
+- **Modo cuidado (humor ≤ 2):** 2 partes: acolhimento + ação gentil. Máximo 60 palavras. Sem mencionar trabalho, metas ou comparações.
 
-```
-[escreva aqui]
-```
-
-**Cor favorita** (vai influenciar o tema): _______________
+### Análise semanal
+- **Tom:** acolhedor mas honesto, "parceira que vê os dados e se importa, não coach"
+- **Contexto:** sono, atendimentos, cancelamentos, conteúdo postado, lazer, aderência à rotina, gratidões, conquistas, treino, comparação com período anterior, contexto da última análise
+- **Estrutura de saída:** Visão Geral / Destaques / Padrões Preocupantes / Foco para o próximo período
+- **Alertas automáticos:** ≥ 3 dias com humor < 3 (tratado com cuidado genuíno na seção Padrões Preocupantes)
+- **Máximo:** 400 palavras, sem emojis
 
 ---
 
-## 7. Qualquer outra coisa
+## Lazeres cadastrados (padrão)
 
-Tem alguma ideia, funcionalidade, ou coisa que você viu em algum app e queria ter?
+Lista padrão do formulário (não requer cadastro):
+- Crochê
+- Sudoku / Killer Sudoku
+- Leitura
+- Música
+- Puzzles e jogos de lógica
+- Stop / Scattergories
 
-```
-[escreva à vontade]
-```
+Lazeres personalizados são cadastrados pelo painel de Lazer e persistidos no banco por usuário.
+
+---
+
+## Aderência à rotina
+
+- Checkin por slot de rotina: feito / não feito / sem marcação
+- Histórico semanal no gráfico de aderência
+- Disponível no `GET /api/rotina/aderencia?semanas=4`
+- Incluído no contexto da análise semanal como % da semana atual vs. período anterior

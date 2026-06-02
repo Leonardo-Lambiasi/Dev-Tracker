@@ -20,8 +20,9 @@ export default function Login() {
       const data = await api.login(usuario.trim(), senha);
       login(data.token, data.usuario);
       navigate('/');
-    } catch {
-      setErro('Usuário ou senha inválidos.');
+    } catch (err) {
+      const msg = err?.message;
+      setErro(msg && !msg.startsWith('HTTP') ? msg : 'Usuário ou senha inválidos.');
     } finally {
       setLoading(false);
     }

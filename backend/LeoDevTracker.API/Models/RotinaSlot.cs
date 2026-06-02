@@ -31,6 +31,10 @@ namespace LeoDevTracker.API.Models
         [StringLength(5)]
         public string? HoraFim { get; set; }
 
+        public bool IsRecorrente { get; set; } = false;
+
+        public int[]? DiasRecorrentes { get; set; }
+
         public DateTime CriadoEm { get; set; } = DateTime.UtcNow;
     }
 }

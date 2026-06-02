@@ -1,1 +1,81 @@
-[{'semanal': 1.0, 'claude-sonnet-4-20250514",\n    max_tokens = 1000,\n    messages = new[] {\n        new {\n            role = "user': 'content = prompt'}, {'PERFIL': 26, 'principal': 'C#/.NET', 'carreira': 'dev júnior em 6-9 meses', 'SEMANA': 'Estudos e trabalho:\n- Horas estudadas: {total_horas'}, {'estudados': {'Rift': {'resolvidos': {'bem-estar': 'Humor médio: {humor'}, 'relatados': {'relatados': {'físico': 'Dias de academia: {dias_academia'}, 'meta': 3, 'vôlei': {'meta': 2, 'treinos': {'treino': {'pessoais': {'GERE': 1.0, 'obrigatórios': 'Data (auto-preenchida com hoje)\n  - Humor (1–5', 'incentivados)': 'Horas de estudo\n  - Tópico estudado\n  - Features entregues na Rift\n  - Bugs resolvidos na Rift\n\nCampos de treino (opcionais):\n  - Tipo de treino: Academia / Vôlei / Ambos / Nenhum\n  - Rendimento no treino (1–5)\n  - Observação livre (ex:', 'PR no supino': 'Campos de reflexão (opcionais):\n  - O que travou hoje?\n  - Destaque do dia\n\nDesign: formulário único em seções colapsáveis (Estudos /\nTrabalho / Treino / Reflexão)', 'Registrar': 'o final.\nTempo médio de preenchimento: 1–2 minutos.\n\n\n----------------------------------------------------------------\n7. DASHBOARD VISUAL — O QUE EXIBIR\n----------------------------------------------------------------\n\nSeção 1 — Esta semana (cards no topo):\n  - Total de horas estudadas\n  - Features + bugs na Rift\n  - Humor médio\n  - Dias com registro (streak)\n\nSeção 2 — Gráficos (Recharts):\n  - Linha: horas de estudo por dia (últimas 4 semanas)\n  - Barra: humor por dia (última semana)\n  - Pizza ou barra: tópicos mais estudados\n\nSeção 3 — Projetos:\n  - Card por projeto com barra de progresso\n  - Status e stack\n  - Botão de atualizar percentual\n\nSeção 4 — Metas financeiras:\n  - Barra de progresso por meta\n  - Valor atual vs meta\n  - Prazo restante\n\nSeção 5 — Análise de treino:\n  - Cards: dias de academia na semana / dias de vôlei\n  - Gráfico: consistência de treino por semana (barras empilhadas\n    academia vs vôlei)\n  - Rendimento médio nos treinos (linha ou média simples)\n  - Indicador visual: meta atingida ou não (academia 3x', 'destacado)': 'Texto gerado pelo Claude\n  - Data de geração\n  - Botão', 'análise': 'disponível uma vez por semana)\n\n\n----------------------------------------------------------------\n8. ROADMAP DE DESENVOLVIMENTO\n----------------------------------------------------------------\n\nSEMANA 1 (Quintas + Sábado):\n  - Criar projeto .NET com EF + PostgreSQL\n  - Criar tabelas com migrations (incluindo campos de treino)\n  - Endpoints de registro diário funcionando\n  - Projeto React com Vite iniciado\n  - Formulário diário com POST para o backend\n\nSEMANA 2:\n  - Dashboard com cards de resumo\n  - Gráfico de horas de estudo (Recharts)\n  - CRUD de projetos + barra de progresso\n  - Tela de histórico\n\nSEMANA 3:\n  - Integração Claude API no backend\n  - Endpoint POST /api/analise/gerar funcionando\n  - Card de análise semanal no frontend\n  - Metas financeiras\n\nSEMANA 4:\n  - Seção de análise de treino (gráficos + metas)\n  - Ajustes de layout e UX\n  - Deploy: frontend no Vercel', 'modo duro': 'se não registrar por 3 dias'}}}}}}}}]
+# Leo Dev Tracker — Perfil e Contexto do Leo
+
+Documento de referência para o perfil do usuário Leo e as decisões de personalização do app.
+
+---
+
+## Perfil
+
+| Campo | Valor |
+|---|---|
+| Nome | Leonardo Lambiasi |
+| Idade | 26 anos |
+| Função atual | Suporte técnico na Rift Sistemas (em transição para dev júnior) |
+| Stack principal | C#/.NET, SQL Server, React |
+| Meta de carreira | Dev júnior em 6–9 meses; pleno em 3 anos |
+| Treino | Academia 5x/semana + Vôlei 2x/semana |
+| Característica relevante | Tendência a desistir sob pressão — prefere feedback honesto que reconhece o esforço sem ser condescendente |
+
+---
+
+## Campos do registro diário (Leo)
+
+| Seção | Campo | Tipo |
+|---|---|---|
+| Geral | Data | date (default: hoje local) |
+| Geral | Humor | 1–5 (obrigatório) |
+| Estudos | Horas estudadas | decimal (0–24, step 0.5) |
+| Estudos | Tópico estudado | texto livre |
+| Trabalho (Rift) | Tickets trabalhados | inteiro (0–50) |
+| Trabalho (Rift) | Horas trabalhadas | decimal (0–24, step 0.5) |
+| Treino | Tipo | Academia / Vôlei / Ambos / Nenhum |
+| Treino | Rendimento | 1–5 |
+| Treino | Observação | texto livre |
+| Reflexão | Conquistas | textarea |
+| Reflexão | Desafios | textarea |
+| Reflexão | Destaques | textarea |
+
+Campos `FeaturesRift` e `BugsRift` existem no modelo mas não são expostos no formulário atualmente (campos legacy mantidos para histórico).
+
+---
+
+## Métricas do dashboard (Leo)
+
+- Horas de estudo da semana
+- Tickets Rift da semana + horas trabalhadas
+- Humor médio da semana
+- Dias com registro na semana
+
+### Gráficos
+- Linha: horas de estudo por dia (últimas 4 semanas)
+- Barras: humor por dia (semana atual)
+- Barras horizontais: tópicos estudados por horas (últimas 4 semanas)
+
+---
+
+## Personalização da IA (Leo)
+
+### Insight diário
+- **Tom:** mentor direto, sem elogios vazios, pode ser crítico
+- **Contexto:** dia atual + últimos 5 registros (tendência) + projetos ativos com % + streak de treino (últimos 30 dias)
+- **Saída:** 2 frases — 1ª: observação honesta; 2ª: ação concreta e executável para amanhã
+- **Máximo:** 80 palavras
+
+### Análise semanal
+- **Tom:** honesto, direto, data-driven
+- **Contexto adicional:** metas financeiras com progresso %, comparação com período anterior, contexto da última análise
+- **Estrutura de saída:** Visão Geral / Destaques / Padrões Preocupantes / Foco para o próximo período
+- **Máximo:** 400 palavras, sem emojis
+- **Alertas automáticos:** estuda < período anterior, treino abaixo da meta (academia 5x, vôlei 2x), metas financeiras estagnadas
+
+### Análise de extrato
+- **Contexto adicional:** metas financeiras cadastradas (nome, valor atual, meta, progresso %)
+- **Campos extras no JSON:** `projecao`, `acoes_concretas`, `alertas`, `metas_impacto`
+
+---
+
+## Tema visual
+
+- Cor de acesso: índigo `#6366f1`
+- Background de acesso: `#6366f120`
+- Definido dinamicamente via CSS vars em `Dashboard.jsx` no `useEffect` de montagem

@@ -7,6 +7,9 @@ using LeoDevTracker.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace LeoDevTracker.API.Controllers
 {
@@ -39,6 +42,13 @@ namespace LeoDevTracker.API.Controllers
             _db.RegistrosDiarios.Add(registro);
             await _db.SaveChangesAsync();
 
+            // Contexto para IA: últimos 5 registros antes de hoje
+            var ultimos5 = await _db.RegistrosDiarios
+                .Where(r => r.Usuario == usuario && r.Data.Date < dataLocal)
+                .OrderByDescending(r => r.Data)
+                .Take(5)
+                .ToListAsync();
+
             string insightFallback = usuario == "rafa"
                 ? "Registro salvo. Cuide-se bem hoje."
                 : "Registro salvo. Continue avançando.";
@@ -46,9 +56,27 @@ namespace LeoDevTracker.API.Controllers
             string? insightErro = null;
             try
             {
-                var prompt = usuario == "rafa"
-                    ? (registro.Humor <= 2 ? MontarPromptRafaCuidado(registro) : MontarPromptInsightRafa(registro))
-                    : MontarPromptInsightLeo(registro);
+                string prompt;
+                if (usuario == "rafa")
+                {
+                    var alertaHumor = CheckAlertaHumor(registro, ultimos5);
+                    prompt = registro.Humor <= 2
+                        ? MontarPromptRafaCuidado(registro, ultimos5)
+                        : MontarPromptInsightRafa(registro, ultimos5, alertaHumor);
+                }
+                else
+                {
+                    var projetos = await _db.Projetos
+                        .Where(p => p.Usuario == usuario && p.Status != "concluído")
+                        .ToListAsync();
+                    var ultimosTreino = await _db.RegistrosDiarios
+                        .Where(r => r.Usuario == usuario && r.Data.Date < dataLocal)
+                        .OrderByDescending(r => r.Data)
+                        .Take(30)
+                        .ToListAsync();
+                    var streak = CalcStreak(registro, ultimosTreino);
+                    prompt = MontarPromptInsightLeo(registro, ultimos5, projetos, streak);
+                }
                 var insight = await ai.Enviar(prompt, AiModelos.Flash, maxTokens: 500);
                 registro.InsightDiario = string.IsNullOrWhiteSpace(insight) ? insightFallback : insight;
                 await _db.SaveChangesAsync();
@@ -104,29 +132,58 @@ namespace LeoDevTracker.API.Controllers
             catch { }
         }
 
-        private static string MontarPromptInsightLeo(RegistroDiario r)
+        private static string MontarPromptInsightLeo(RegistroDiario r, List<RegistroDiario> ultimos5, List<Projeto> projetos, int streakTreino)
         {
-            var oQueFez = string.Join(" / ", new[] { r.Conquistas, r.Destaque }
-                .Where(s => !string.IsNullOrWhiteSpace(s)));
+            var tendencia = ultimos5.Count > 0
+                ? "TENDÊNCIA DOS ÚLTIMOS 5 DIAS:\n" + string.Join("\n", ultimos5
+                    .OrderBy(p => p.Data)
+                    .Select(p =>
+                    {
+                        var pts = new List<string> { p.Data.ToString("dd/MM") };
+                        if (p.Humor.HasValue) pts.Add($"humor {p.Humor}");
+                        if (p.HorasEstudo > 0) pts.Add($"{p.HorasEstudo:F1}h estudo" + (p.TopicoEstudo != null ? $" ({p.TopicoEstudo})" : ""));
+                        if (!string.IsNullOrEmpty(p.TreinoTipo) && p.TreinoTipo != "nenhum") pts.Add($"treino: {p.TreinoTipo}");
+                        if (!string.IsNullOrEmpty(p.Destaque)) pts.Add($"\"{p.Destaque}\"");
+                        return "- " + string.Join(", ", pts);
+                    }))
+                : "TENDÊNCIA: sem registros anteriores.";
+
+            var projetosBloco = projetos.Count > 0
+                ? "PROJETOS ATIVOS:\n" + string.Join("\n", projetos.Select(p =>
+                    $"- {p.Nome}: {p.Percentual}%{(p.ProximoPasso != null ? $" → {p.ProximoPasso}" : "")} ({p.Status})"))
+                : "PROJETOS: nenhum ativo cadastrado.";
+
+            var streakTxt = streakTreino > 1
+                ? $"{streakTreino} dias consecutivos de treino."
+                : streakTreino == 1 ? "Primeiro dia na sequência de treino."
+                : "Nenhuma sequência de treino ativa.";
+
+            var treinoHoje = !string.IsNullOrEmpty(r.TreinoTipo) && r.TreinoTipo != "nenhum";
 
             return $"""
-                Você é um mentor direto de Leo, dev em transição para júnior (foco em C#/.NET).
-                Com base nos dados do dia abaixo, escreva em português 2 frases curtas:
-                primeira frase: uma observação honesta sobre o que os dados revelam.
-                segunda frase: uma ação específica e concreta para fazer amanhã.
-                Não use listas, não use marcadores, não use emojis. Máximo 80 palavras.
-                IMPORTANTE: Sempre retorne uma resposta. Se os dados forem insuficientes, comente sobre a consistência de registrar.
+                Você é um mentor direto de Leo, 26 anos, dev em transição para júnior (C#/.NET + React).
+                Analise os dados do dia e a tendência. Retorne APENAS 2 frases em português:
+                1ª frase: observação honesta sobre o que os dados revelam — pode ser crítica, sem elogios vazios.
+                2ª frase: ação específica, concreta e executável para amanhã.
+                Sem listas, sem marcadores, sem emojis. Máximo 80 palavras.
+                IMPORTANTE: Sempre retorne resposta.
 
-                Dados de {r.Data:dd/MM/yyyy}:
-                Conquistas/destaque: {(string.IsNullOrWhiteSpace(oQueFez) ? "não informado" : oQueFez)}
-                Desafio: {r.Desafios ?? "não informado"}
-                Estudo: {r.HorasEstudo?.ToString("F1") ?? "0"}h em {r.TopicoEstudo ?? "não informado"}
-                Humor: {r.Humor?.ToString() ?? "?"}/5
-                Treino: {r.TreinoTipo ?? "nenhum"}, rendimento {r.TreinoRendimento?.ToString() ?? "?"}
+                HOJE ({r.Data:dd/MM/yyyy}):
+                - Humor: {r.Humor?.ToString() ?? "?"}/5
+                - Estudo: {r.HorasEstudo?.ToString("F1") ?? "0"}h em {r.TopicoEstudo ?? "não informado"}
+                - Trabalho Rift: {r.FeaturesRift} feat, {r.BugsRift} bugs, {r.TicketsTrabalhados ?? 0} tickets, {r.HorasTrabalhadas:F1}h
+                - Treino: {(treinoHoje ? $"{r.TreinoTipo}, rendimento {r.TreinoRendimento?.ToString() ?? "?"}/5" : "não treinou")}
+                - Destaque: {r.Destaque ?? "não informado"}
+                - Desafios: {r.Desafios ?? "não informado"}
+                - Streak de treino: {streakTxt}
+
+                {tendencia}
+
+                {projetosBloco}
                 """;
         }
 
-        private static string MontarPromptInsightRafa(RegistroDiario r)
+        private static string MontarPromptInsightRafa(RegistroDiario r, List<RegistroDiario> ultimos5, bool alertaHumor)
         {
             RafaExtras? extras = null;
             if (!string.IsNullOrWhiteSpace(r.DadosExtras))
@@ -135,25 +192,216 @@ namespace LeoDevTracker.API.Controllers
                 catch { }
             }
 
+            var tendencia = ultimos5.Count > 0
+                ? "ÚLTIMOS 5 DIAS (tendência):\n" + string.Join("\n", ultimos5
+                    .OrderBy(p => p.Data)
+                    .Select(p =>
+                    {
+                        var pts = new List<string> { p.Data.ToString("dd/MM") };
+                        if (p.Humor.HasValue) pts.Add($"humor {p.Humor}");
+                        var sono = ExtrasHelper.GetInt(p.DadosExtras, "qualidadeSono");
+                        if (sono > 0) pts.Add($"sono {sono}/5");
+                        var atend = ExtrasHelper.GetInt(p.DadosExtras, "atendimentos");
+                        if (atend > 0) pts.Add($"{atend} atend.");
+                        if (!string.IsNullOrEmpty(p.TreinoTipo) && p.TreinoTipo != "nenhum") pts.Add($"treino: {p.TreinoTipo}");
+                        return "- " + string.Join(", ", pts);
+                    }))
+                : "ÚLTIMOS DIAS: sem registros anteriores.";
+
+            var alerta = alertaHumor
+                ? "ALERTA: Humor médio dos últimos 3 dias foi ≤ 2. Considere isso na observação com cuidado genuíno."
+                : "";
+
             return $"""
                 Você é uma mentora próxima da Rafa, psicóloga de 30 anos.
-                Com base nos dados do dia abaixo, escreva em português 3 frases curtas:
-                primeira frase: uma observação honesta sobre o dia sem elogios vazios.
-                segunda frase: uma ação pequena e concreta para amanhã.
-                terceira frase: uma mensagem de cuidado genuíno, não genérica.
-                Não use listas, não use marcadores, não use emojis. Máximo 100 palavras.
-                IMPORTANTE: Sempre retorne uma resposta. Se os dados forem insuficientes, comente sobre a consistência de registrar.
+                Analise os dados do dia e o contexto recente. Retorne APENAS 3 frases em português:
+                1ª frase: observação honesta sobre o dia — baseada nos dados, sem elogios vazios.
+                2ª frase: encorajamento genuíno — algo real que ela fez ou uma perspectiva honesta sobre a tendência.
+                3ª frase: ação pequena e concreta para amanhã.
+                Tom: acolhedor mas honesto, como amiga que olha os dados com cuidado.
+                Sem listas, sem marcadores, sem emojis. Máximo 100 palavras.
+                IMPORTANTE: Sempre retorne resposta.
 
-                Dados de {r.Data:dd/MM/yyyy}:
-                Humor: {r.Humor?.ToString() ?? "?"}/5
-                Conquistas: {r.Conquistas ?? "nenhuma"}
-                Desafios: {r.Desafios ?? "nenhum"}
-                Gratidão: {extras?.Gratidao ?? "não registrada"}
-                Atendimentos: {extras?.Atendimentos ?? 0}
-                Treino: {r.TreinoTipo ?? "nenhum"}, rendimento {r.TreinoRendimento?.ToString() ?? "?"}
-                Sono: {extras?.QualidadeSono?.ToString() ?? "?"}
+                {alerta}
+
+                HOJE ({r.Data:dd/MM/yyyy}):
+                - Humor: {r.Humor?.ToString() ?? "?"}/5
+                - Sono: {extras?.QualidadeSono?.ToString() ?? "?"}/5
+                - Atendimentos: {extras?.Atendimentos ?? 0}{(extras?.Cancelamentos > 0 ? $", {extras.Cancelamentos} cancelamento(s) ({extras.MotivoCancelamento ?? "motivo não informado"})" : "")}
+                - Conteúdo postado: {extras?.ConteudoPostado ?? 0}
+                - Gratidão: {extras?.Gratidao ?? "não registrada"}
+                - Treino: {r.TreinoTipo ?? "nenhum"}{(r.TreinoRendimento.HasValue ? $", rendimento {r.TreinoRendimento}/5" : "")}
+                - Lazer: {extras?.Lazer ?? "nenhum"}{(extras?.LazerIntensidade > 0 ? $", intensidade {extras.LazerIntensidade}/5" : "")}
+
+                {tendencia}
                 """;
         }
+
+        [HttpGet("exportar/pdf")]
+        public async Task<IActionResult> ExportarPdf()
+        {
+            var usuario = UsuarioHelper.GetUsuario(User)!;
+            var inicio = DateTime.UtcNow.AddDays(-7).Date;
+            var registros = await _db.RegistrosDiarios
+                .Where(r => r.Usuario == usuario && r.Data >= inicio)
+                .OrderByDescending(r => r.Data)
+                .ToListAsync();
+
+            var pdf = GerarPdf(usuario, registros, inicio, DateTime.UtcNow.Date);
+            var fileName = $"devtracker-historico-{DateTime.Now:dd-MM-yyyy}.pdf";
+            return File(pdf, "application/pdf", fileName);
+        }
+
+        private static byte[] GerarPdf(string usuario, List<RegistroDiario> registros, DateTime inicio, DateTime fim)
+        {
+            var nomeUsuario = usuario == "rafa" ? "Rafa" : "Leo";
+            var isRafa = usuario == "rafa";
+
+            var doc = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.MarginHorizontal(40);
+                    page.MarginVertical(36);
+                    page.DefaultTextStyle(x => x.FontSize(10).FontColor("#1e293b"));
+
+                    // ── Cabeçalho ─────────────────────────────────────
+                    page.Header().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(c =>
+                            {
+                                c.Item().Text($"Leo Dev Tracker — {nomeUsuario}")
+                                    .FontSize(18).Bold().FontColor("#0f172a");
+                                c.Item().Text($"{inicio:dd/MM/yyyy} a {fim:dd/MM/yyyy}")
+                                    .FontSize(11).FontColor("#64748b");
+                            });
+                            row.ConstantItem(80).AlignRight().AlignBottom()
+                                .Text($"{registros.Count} registros")
+                                .FontSize(10).FontColor("#94a3b8");
+                        });
+                        col.Item().PaddingTop(8).LineHorizontal(1).LineColor("#e2e8f0");
+                        col.Item().Height(12);
+                    });
+
+                    // ── Conteúdo ───────────────────────────────────────
+                    page.Content().Column(col =>
+                    {
+                        if (registros.Count == 0)
+                        {
+                            col.Item().PaddingTop(24)
+                                .Text("Nenhum registro nos últimos 7 dias.")
+                                .FontSize(12).FontColor("#64748b");
+                            return;
+                        }
+
+                        foreach (var r in registros)
+                        {
+                            col.Item()
+                                .Border(1).BorderColor("#e2e8f0")
+                                .Background("#f8fafc")
+                                .Padding(14)
+                                .Column(card =>
+                                {
+                                    // Linha de cabeçalho do card
+                                    card.Item().Row(row =>
+                                    {
+                                        row.RelativeItem()
+                                            .Text(r.Data.ToString("dddd, dd/MM/yyyy", new System.Globalization.CultureInfo("pt-BR")))
+                                            .FontSize(12).Bold().FontColor("#0f172a");
+                                        if (r.Humor.HasValue)
+                                            row.ConstantItem(70).AlignRight()
+                                                .Text($"Humor {r.Humor}/5 {HumorLabel(r.Humor.Value)}")
+                                                .FontSize(10).FontColor(HumorCor(r.Humor.Value));
+                                    });
+
+                                    card.Item().PaddingTop(6).LineHorizontal(1).LineColor("#e2e8f0");
+                                    card.Item().Height(6);
+
+                                    // Campos dependem do usuário
+                                    if (isRafa)
+                                    {
+                                        var sono = ExtrasHelper.GetInt(r.DadosExtras, "qualidadeSono");
+                                        var atend = ExtrasHelper.GetInt(r.DadosExtras, "atendimentos");
+                                        var gratidao = ExtrasHelper.GetString(r.DadosExtras, "gratidao");
+                                        if (sono > 0) AddCampo(card, "Sono", $"{sono}/5");
+                                        if (atend > 0) AddCampo(card, "Atendimentos", atend.ToString());
+                                        if (!string.IsNullOrEmpty(gratidao)) AddCampo(card, "Gratidão", gratidao);
+                                    }
+                                    else
+                                    {
+                                        if (r.HorasEstudo > 0)
+                                            AddCampo(card, "Estudo", $"{r.HorasEstudo:F1}h" + (r.TopicoEstudo != null ? $" — {r.TopicoEstudo}" : ""));
+                                        if (r.FeaturesRift > 0 || r.BugsRift > 0)
+                                            AddCampo(card, "Rift", $"{r.FeaturesRift} feat · {r.BugsRift} bugs");
+                                    }
+
+                                    if (!string.IsNullOrEmpty(r.TreinoTipo) && r.TreinoTipo != "nenhum")
+                                        AddCampo(card, "Treino", r.TreinoTipo +
+                                            (r.TreinoRendimento.HasValue ? $" · rendimento {r.TreinoRendimento}/5" : ""));
+
+                                    if (!string.IsNullOrEmpty(r.Destaque))
+                                        AddCampo(card, "Destaque", r.Destaque);
+                                    if (!string.IsNullOrEmpty(r.Desafios))
+                                        AddCampo(card, "Desafios", r.Desafios);
+                                    if (!string.IsNullOrEmpty(r.Conquistas))
+                                        AddCampo(card, "Conquistas", r.Conquistas);
+
+                                    if (!string.IsNullOrEmpty(r.InsightDiario))
+                                    {
+                                        card.Item().PaddingTop(6)
+                                            .Background("#f1f5f9")
+                                            .Padding(8)
+                                            .Text(r.InsightDiario)
+                                            .FontSize(9).Italic().FontColor("#475569");
+                                    }
+                                });
+
+                            col.Item().Height(10);
+                        }
+                    });
+
+                    // ── Rodapé ─────────────────────────────────────────
+                    page.Footer().AlignCenter()
+                        .Text($"Leo Dev Tracker — gerado em {DateTime.Now:dd/MM/yyyy HH:mm}")
+                        .FontSize(8).FontColor("#94a3b8");
+                });
+            });
+
+            return doc.GeneratePdf();
+        }
+
+        private static void AddCampo(ColumnDescriptor col, string label, string valor)
+        {
+            col.Item().Row(row =>
+            {
+                row.ConstantItem(80).Text(label).FontSize(9).FontColor("#64748b");
+                row.RelativeItem().Text(valor).FontSize(10).FontColor("#1e293b");
+            });
+            col.Item().Height(3);
+        }
+
+        private static string HumorLabel(int h) => h switch
+        {
+            1 => "☹",
+            2 => ":|",
+            3 => ":-|",
+            4 => ":)",
+            5 => ":D",
+            _ => ""
+        };
+
+        private static string HumorCor(int h) => h switch
+        {
+            1 => "#ef4444",
+            2 => "#f97316",
+            3 => "#94a3b8",
+            4 => "#22c55e",
+            5 => "#10b981",
+            _ => "#94a3b8"
+        };
 
         [HttpGet]
         public async Task<IActionResult> GetAll([FromQuery] DateTime? inicio, [FromQuery] DateTime? fim)
@@ -260,28 +508,66 @@ namespace LeoDevTracker.API.Controllers
             return NoContent();
         }
 
-        private static string MontarPromptRafaCuidado(RegistroDiario r) => $"""
-            Você é uma amiga próxima da Rafa, psicóloga de 30 anos passando por um dia difícil.
-            Ela registrou humor {r.Humor}/5 hoje.
+        private static string MontarPromptRafaCuidado(RegistroDiario r, List<RegistroDiario> ultimos5)
+        {
+            var diasRecentes = ultimos5.Take(3).OrderBy(p => p.Data)
+                .Where(p => p.Humor.HasValue)
+                .Select(p => $"{p.Data:dd/MM} humor {p.Humor}");
+            var contextoRecente = diasRecentes.Any()
+                ? "Dias recentes: " + string.Join(", ", diasRecentes)
+                : "";
 
-            O que ela registrou:
-            - Conquistas: {r.Conquistas ?? "não registrou"}
-            - Gratidão: {Helpers.ExtrasHelper.GetString(r.DadosExtras, "gratidao") ?? "não registrou"}
-            - Treino: {r.TreinoTipo ?? "não registrou"}
+            return $"""
+                Você é uma amiga próxima da Rafa, psicóloga de 30 anos passando por um dia difícil.
+                Ela registrou humor {r.Humor}/5 hoje.
 
-            Responda em 2 partes:
-            [Acolhimento] Reconheça que foi difícil — sem minimizar, sem elogios vazios. 1-2 frases.
-            [Amanhã] UMA coisa pequena e gentil para amanhã — algo que ela consiga mesmo cansada.
+                O que ela registrou:
+                - Conquistas: {r.Conquistas ?? "não registrou"}
+                - Gratidão: {ExtrasHelper.GetString(r.DadosExtras, "gratidao") ?? "não registrou"}
+                - Treino: {r.TreinoTipo ?? "não registrou"}
+                {contextoRecente}
 
-            REGRAS:
-            - Não mencione produtividade, metas, atendimentos ou trabalho
-            - Não compare com outras semanas
-            - Sem frases de coach ou motivacionais
-            - Tom: amiga que entende, não terapeuta
-            - Máximo 60 palavras
-            - Se não registrou gratidão nem conquistas: reconheça o ato de ter registrado como força
-            - IMPORTANTE: Sempre retorne uma resposta, nunca retorne vazio
-            """;
+                Responda em 2 partes:
+                [Acolhimento] Reconheça que foi difícil — sem minimizar, sem elogios vazios. 1-2 frases.
+                [Amanhã] UMA coisa pequena e gentil para amanhã — algo que ela consiga mesmo cansada.
+
+                REGRAS:
+                - Não mencione produtividade, metas, atendimentos ou trabalho
+                - Não compare com outras semanas
+                - Sem frases de coach ou motivacionais
+                - Tom: amiga que entende, não terapeuta
+                - Máximo 60 palavras
+                - Se não registrou gratidão nem conquistas: reconheça o ato de ter registrado como força
+                - IMPORTANTE: Sempre retorne uma resposta, nunca retorne vazio
+                """;
+        }
+
+        private static bool CheckAlertaHumor(RegistroDiario hoje, List<RegistroDiario> ultimos5)
+        {
+            var humores = ultimos5.Take(2)
+                .Where(r => r.Humor.HasValue)
+                .Select(r => (double)r.Humor!.Value)
+                .ToList();
+            if (hoje.Humor.HasValue) humores.Add((double)hoje.Humor.Value);
+            return humores.Count >= 2 && humores.Average() <= 2;
+        }
+
+        private static int CalcStreak(RegistroDiario hoje, List<RegistroDiario> ultimos5)
+        {
+            var treinoHoje = !string.IsNullOrEmpty(hoje.TreinoTipo) && hoje.TreinoTipo != "nenhum";
+            if (!treinoHoje) return 0;
+
+            var streak = 1;
+            var prevDate = hoje.Data.Date.AddDays(-1);
+            foreach (var r in ultimos5.OrderByDescending(r => r.Data))
+            {
+                if (r.Data.Date != prevDate) break;
+                if (string.IsNullOrEmpty(r.TreinoTipo) || r.TreinoTipo == "nenhum") break;
+                streak++;
+                prevDate = prevDate.AddDays(-1);
+            }
+            return streak;
+        }
     }
 
     // DTO para deserializar os extras da Rafa
@@ -294,5 +580,10 @@ namespace LeoDevTracker.API.Controllers
         public int? Atendimentos { get; set; }
         public bool? Supervisao { get; set; }
         public int? ConteudoPostado { get; set; }
+        public int? Cancelamentos { get; set; }
+        public string? MotivoCancelamento { get; set; }
+        public string? Lazer { get; set; }
+        public int? LazerIntensidade { get; set; }
+        public string? LazerObs { get; set; }
     }
 }
